@@ -15,6 +15,3 @@ local.properties
 /app/google-services.json
 /functions/node_modules
 /functions/lib
-/functions/.env
-/functions/.env.*
-!/functions/.env.example

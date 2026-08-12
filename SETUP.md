@@ -1,13 +1,15 @@
 # Setup: going from fakes to real services
 
 The app now defaults to **real** integrations (Firebase Auth/Firestore, Google Maps/Places/
-Directions, Razorpay) — [`di/RepositoryModule.kt`](app/src/main/java/com/amchiyatri/rider/di/RepositoryModule.kt)
+Directions, direct UPI payments) — [`di/RepositoryModule.kt`](app/src/main/java/com/amchiyatri/rider/di/RepositoryModule.kt)
 binds every interface to its real implementation. Without the setup below, it **will build fine
 but crash on launch** (Firebase isn't initialized) or silently fail Maps calls (placeholder API
 key). This doc is the checklist to make it actually work end-to-end.
 
-Everything here needs your own accounts — nothing in this repo can create a Google Cloud project,
-a Firebase project, or a Razorpay account on your behalf.
+Everything here needs your own accounts — nothing in this repo can create a Google Cloud project
+or a Firebase project on your behalf. Payments are the one exception: they need **no account at
+all** beyond a UPI ID you already have (GPay/PhonePe/BHIM/etc.) - no Razorpay, no Play Developer
+account. See step 5.
 
 ## 1. Android app signing info you'll need to register
 
@@ -58,7 +60,7 @@ Package name: `com.amchiyatri.rider`
    `X-Android-Package`/`X-Android-Cert` headers so the Android-restricted key also works for the
    plain Directions endpoint (see [Google's API security guide](https://developers.google.com/maps/api-security-best-practices)).
 
-## 4. Cloud Functions (the dispatch simulator + Razorpay backend)
+## 4. Cloud Functions (the dispatch simulator)
 
 ```
 cd functions
@@ -66,30 +68,31 @@ npm install
 firebase deploy --only functions
 ```
 
-This deploys three functions (region `asia-south1`):
-- `onRideCreated` — watches new `rides/{rideId}` documents and runs the driver-assignment/
-  movement simulation (this is what makes ride tracking "real-time": it's a server process, not
-  code in the app).
-- `createRazorpayOrder` / `verifyRazorpayPayment` — see step 5.
+This deploys `onRideCreated` — it watches new `rides/{rideId}` documents and runs the
+driver-assignment/movement simulation (this is what makes ride tracking "real-time": it's a
+server process, not code in the app).
 
 If you skip this step, requesting a ride will create a Firestore document that just sits at
 `SEARCHING_DRIVER` forever (nothing is watching it).
 
-## 5. Razorpay
+## 5. Payments: your own UPI ID, no gateway account
 
-1. Get your **Key ID** and **Key Secret** from the [Razorpay dashboard](https://dashboard.razorpay.com/)
-   (test mode is fine to start).
-2. Key ID (not secret) goes in `functions/.env` (copy from `functions/.env.example`):
-   ```
-   RAZORPAY_KEY_ID=rzp_test_xxxxxxxxxxxxx
-   ```
-3. Key **secret** must never sit in a file — set it as a Cloud Functions secret instead:
-   ```
-   firebase functions:secrets:set RAZORPAY_KEY_SECRET
-   ```
-   (paste the secret when prompted). Re-run `firebase deploy --only functions` after setting it.
+Real UPI payments here don't go through Razorpay/PayU/any aggregator - they're a direct
+"scan-or-tap-to-pay" request to **one fixed UPI ID**, the same mechanism as a shop counter's QR
+code. That's a deliberate trade-off given there's no merchant account: no signup, but also no
+per-driver payouts and no cryptographic proof of payment (see the README's Known limitations).
 
-Cash payments skip Razorpay entirely; only UPI/Wallet selections trigger Checkout.
+1. Pick any UPI ID you control (your own GPay/PhonePe/BHIM VPA is fine for testing).
+2. Put it in `app/secrets.properties` (create it from `app/local.defaults.properties` if you
+   haven't already):
+   ```
+   UPI_PAYEE_VPA=yourname@upi
+   UPI_PAYEE_NAME=Amchi Yatri
+   ```
+3. That's it - no deploy step, no dashboard, no secret to set. `FareSummaryScreen` builds a
+   `upi://pay?...` link and a QR code from these two values (see `util/UpiQrCode.kt`).
+
+Cash payments skip this entirely.
 
 ## 6. Build and run
 
@@ -99,7 +102,7 @@ Cash payments skip Razorpay entirely; only UPI/Wallet selections trigger Checkou
 
 or just hit Run in Android Studio. If everything above is in place: real SMS OTP login, a live
 Google Map, real place autocomplete restricted to Mumbai, real road-distance fares, a ride that
-gets matched and animated by your own Cloud Function, and a real Razorpay payment sheet.
+gets matched and animated by your own Cloud Function, and a real UPI payment QR/intent.
 
 ## Rolling back to fakes for offline development
 
@@ -125,5 +128,6 @@ Nothing else in the app needs to change either way.
   deployed, or check `firebase functions:log` for an error in it.
 - **Directions/autocomplete return nothing** → check the key has Places API + Directions API
   enabled (not just Maps SDK), and that billing is on for the project.
-- **Payment fails immediately** → `RAZORPAY_KEY_SECRET` isn't set (step 5.3), or check
-  `firebase functions:log` for the `createRazorpayOrder`/`verifyRazorpayPayment` functions.
+- **"Pay with a UPI app" does nothing / no app opens** → no UPI app is installed (common on
+  emulators) - the QR code still works if a phone with a UPI app scans it, and the manual
+  "Yes, paid" / "It failed" buttons are always available as a fallback either way.

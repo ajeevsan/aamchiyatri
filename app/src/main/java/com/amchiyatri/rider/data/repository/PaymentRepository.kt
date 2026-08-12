@@ -1,79 +1,72 @@
 package com.amchiyatri.rider.data.repository
 
-import com.google.firebase.functions.FirebaseFunctions
-import kotlinx.coroutines.delay
+import android.graphics.Bitmap
+import com.amchiyatri.rider.BuildConfig
+import com.amchiyatri.rider.util.UpiPayment
+import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.random.Random
 
-data class RazorpayOrder(
-    val orderId: String,
-    val amountPaise: Long,
-    val currency: String,
-    val keyId: String,
+data class UpiPaymentRequest(
+    val upiUri: String,
+    val qrBitmap: Bitmap,
 )
 
 /**
- * UPI/card/wallet payments via Razorpay. Order creation and signature verification both happen
- * in Cloud Functions (functions/payments.js) - the secret key must never be embedded in the app,
- * so this repository is a thin client over two `onCall` functions.
+ * Direct UPI payment: no gateway, no merchant account, no Play Developer account - just a QR
+ * code / UPI-app intent addressed to a single fixed VPA (`BuildConfig.UPI_PAYEE_VPA`, from
+ * app/secrets.properties). See util/UpiQrCode.kt for how the request is built.
  *
- * Cash payments never touch this at all; see FareSummaryScreen.
+ * There's no signature to verify server-side the way a real gateway gives you, so
+ * [recordPaymentOutcome] just records what the UPI app (or the rider, manually) reported - see
+ * PaymentViewModel for the fallback confirmation flow.
  */
 interface PaymentRepository {
-    suspend fun createOrder(rideId: String, amountRupees: Double): Result<RazorpayOrder>
-    suspend fun verifyPayment(rideId: String, orderId: String, paymentId: String, signature: String): Result<Unit>
+    fun preparePayment(rideId: String, amountRupees: Double): UpiPaymentRequest
+    suspend fun recordPaymentOutcome(rideId: String, succeeded: Boolean, rawResponse: String?): Result<Unit>
 }
 
 @Singleton
-class RazorpayPaymentRepository @Inject constructor(
-    private val functions: FirebaseFunctions,
+class UpiPaymentRepository @Inject constructor(
+    private val firestore: FirebaseFirestore,
 ) : PaymentRepository {
 
-    override suspend fun createOrder(rideId: String, amountRupees: Double): Result<RazorpayOrder> = runCatching {
-        val data = mapOf("rideId" to rideId, "amountRupees" to amountRupees)
-        val result = functions.getHttpsCallable("createRazorpayOrder").call(data).await()
-        @Suppress("UNCHECKED_CAST")
-        val map = result.data as Map<String, Any?>
-        RazorpayOrder(
-            orderId = map["orderId"] as String,
-            amountPaise = (map["amountPaise"] as Number).toLong(),
-            currency = map["currency"] as String,
-            keyId = map["keyId"] as String,
+    override fun preparePayment(rideId: String, amountRupees: Double): UpiPaymentRequest {
+        val uri = UpiPayment.buildUri(
+            payeeVpa = BuildConfig.UPI_PAYEE_VPA,
+            payeeName = BuildConfig.UPI_PAYEE_NAME,
+            amountRupees = amountRupees,
+            transactionRef = rideId,
+            transactionNote = "Amchi Yatri ride",
         )
+        return UpiPaymentRequest(upiUri = uri, qrBitmap = UpiPayment.toQrBitmap(uri))
     }
 
-    override suspend fun verifyPayment(rideId: String, orderId: String, paymentId: String, signature: String): Result<Unit> = runCatching {
-        val data = mapOf(
-            "rideId" to rideId,
-            "razorpayOrderId" to orderId,
-            "razorpayPaymentId" to paymentId,
-            "razorpaySignature" to signature,
-        )
-        functions.getHttpsCallable("verifyRazorpayPayment").call(data).await()
-        Unit
+    override suspend fun recordPaymentOutcome(rideId: String, succeeded: Boolean, rawResponse: String?): Result<Unit> = runCatching {
+        firestore.collection("rides").document(rideId).update(
+            mapOf(
+                "paymentStatus" to if (succeeded) "PAID" else "FAILED",
+                "upiResponse" to rawResponse,
+            ),
+        ).await()
     }
 }
 
-/** Offline dev fallback: "succeeds" instantly with a fake order, no gateway involved. */
+/** Offline dev fallback: builds the same real QR/URI (no network involved either way) but never touches Firestore. */
 @Singleton
 class FakePaymentRepository @Inject constructor() : PaymentRepository {
 
-    override suspend fun createOrder(rideId: String, amountRupees: Double): Result<RazorpayOrder> {
-        delay(400)
-        return Result.success(
-            RazorpayOrder(
-                orderId = "order_fake${Random.nextInt(100000, 999999)}",
-                amountPaise = (amountRupees * 100).toLong(),
-                currency = "INR",
-                keyId = "rzp_test_fake",
-            ),
+    override fun preparePayment(rideId: String, amountRupees: Double): UpiPaymentRequest {
+        val uri = UpiPayment.buildUri(
+            payeeVpa = BuildConfig.UPI_PAYEE_VPA,
+            payeeName = BuildConfig.UPI_PAYEE_NAME,
+            amountRupees = amountRupees,
+            transactionRef = rideId,
+            transactionNote = "Amchi Yatri ride (demo)",
         )
+        return UpiPaymentRequest(upiUri = uri, qrBitmap = UpiPayment.toQrBitmap(uri))
     }
 
-    override suspend fun verifyPayment(rideId: String, orderId: String, paymentId: String, signature: String): Result<Unit> {
-        delay(300)
-        return Result.success(Unit)
-    }
+    override suspend fun recordPaymentOutcome(rideId: String, succeeded: Boolean, rawResponse: String?): Result<Unit> = Result.success(Unit)
 }

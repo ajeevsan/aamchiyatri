@@ -6,13 +6,14 @@ the open-source, zero-commission auto/cab booking platform from Bengaluru. "Amch
 
 This is a **complete rider app** — onboarding through payment and rating — wired to **real
 services**: Firebase Phone Auth, live Firestore-backed ride dispatch, Google Maps/Places/
-Directions, and Razorpay. A Cloud Functions backend ([`functions/`](functions)) runs the actual
-driver-matching simulation server-side, so ride tracking is genuinely real-time across devices,
-not a client-side animation.
+Directions, and direct UPI payments. A Cloud Functions backend ([`functions/`](functions)) runs the
+actual driver-matching simulation server-side, so ride tracking is genuinely real-time across
+devices, not a client-side animation.
 
-**New checkout: see [SETUP.md](SETUP.md) for the exact steps** to connect your own Firebase/Google
-Cloud/Razorpay accounts — none of that can be done for you, since it needs your credentials. Until
-you do, the app builds fine but won't run (no Firebase project = crash on launch).
+**See [SETUP.md](SETUP.md) for the exact steps** to connect your own Firebase/Google Cloud
+project — that part can't be done for you, since it needs your credentials. Until you do, the app
+builds fine but won't run (no Firebase project = crash on launch). Payments are the one piece that
+needs no account at all - see below.
 
 Every real integration still has an offline, no-account `Fake*` counterpart in the same file for
 local development — see [Rolling back to fakes](SETUP.md#rolling-back-to-fakes-for-offline-development).
@@ -29,8 +30,8 @@ local development — see [Rolling back to fakes](SETUP.md#rolling-back-to-fakes
   their approach and the trip on a live Google Map, all streamed back via a Firestore listener
 - **Safety**: an SOS button during any active ride (real one-tap dial to police/emergency
   contacts via `ACTION_DIAL`), emergency contacts management in Profile
-- **Payments**: Cash (skips the gateway) or UPI/Wallet via real Razorpay Checkout, with order
-  creation and signature verification done server-side in Cloud Functions
+- **Payments**: Cash, or a real UPI payment (QR code + UPI-app intent) straight to one configured
+  VPA - no payment gateway, no merchant account, no Play Developer account needed
 - **Ratings**: 5-star rating with contextual positive/negative feedback tags
 - **Ride history**: full list + per-trip detail view, synced live from Firestore
 - **Profile**: name/email/gender, saved places (Home/Work/Other), emergency contacts, language
@@ -41,10 +42,9 @@ local development — see [Rolling back to fakes](SETUP.md#rolling-back-to-fakes
 - Kotlin + Jetpack Compose (Material 3), single-Activity
 - MVVM: `ViewModel` + `StateFlow`, Navigation Compose
 - Hilt for dependency injection
-- Firebase: Auth (phone), Firestore (profile + ride state), Cloud Functions (dispatch simulator,
-  Razorpay order/verify)
+- Firebase: Auth (phone), Firestore (profile + ride state), Cloud Functions (dispatch simulator)
 - Google Maps SDK, Places SDK, Directions API (via Retrofit), Fused Location Provider
-- Razorpay Android Checkout SDK
+- ZXing for UPI QR code generation
 - DataStore for on-device preferences (language)
 
 ## Architecture: real implementations, fakes kept alongside
@@ -60,7 +60,7 @@ implementations in the same file:
 | `LocationRepository` | `GoogleLocationRepository` | `FakeLocationRepository` | Places Autocomplete + Fused Location Provider |
 | `FareRepository` | `DirectionsFareRepository` | `FakeFareRepository` | Directions API |
 | `RideRepository` | `FirestoreRideRepository` | `FakeRideRepository` | Firestore `rides/{rideId}` + `functions/dispatch.js` |
-| `PaymentRepository` | `RazorpayPaymentRepository` | `FakePaymentRepository` | Razorpay via `functions/payments.js` |
+| `PaymentRepository` | `UpiPaymentRepository` | `FakePaymentRepository` | A UPI deep link + QR code - no backend at all |
 
 All six are wired up in one place: [`di/RepositoryModule.kt`](app/src/main/java/com/amchiyatri/rider/di/RepositoryModule.kt).
 Nothing in `ui/` talks to a concrete class directly — screens and ViewModels only ever see the
@@ -78,9 +78,26 @@ The biggest architectural change from a "fakes-only" build: ride dispatch is no 
 inside the Android app. Requesting a ride just creates a `rides/{rideId}` Firestore document; a
 Cloud Function (`functions/dispatch.js`) picks it up, assigns a (still simulated, for now) driver,
 and animates their location over time by writing updates to that same document — which every
-device watching it (via a Firestore snapshot listener) sees live. `functions/payments.js` does the
-equivalent for Razorpay: creating orders and verifying payment signatures server-side, since the
-secret key can never live in the app. See [SETUP.md](SETUP.md) to deploy these.
+device watching it (via a Firestore snapshot listener) sees live. See [SETUP.md](SETUP.md) to
+deploy it.
+
+Payments deliberately have **no server-side piece** - see the next section.
+
+## Payments: direct UPI, no gateway
+
+There's no Razorpay/PayU/etc. integration, and no Google Play Developer account needed, on
+purpose: `PaymentRepository` builds a standard NPCI UPI deep link (`upi://pay?pa=...`, the same
+parameter scheme as [Dhruvil45/upiqr](https://github.com/Dhruvil45/upiqr), ported to
+Kotlin/ZXing since that library targets JS) addressed to **one fixed UPI ID** you configure in
+`app/secrets.properties`. `FareSummaryScreen` shows it as a QR code and as a "pay with a UPI app"
+button (`ACTION_VIEW` intent); either way the money moves bank-to-bank, with no aggregator in the
+middle.
+
+The trade-off: there's no per-driver payout (every ride pays the same VPA - fine for a demo, not
+for a real marketplace) and no cryptographic proof of payment the way a gateway's signed webhook
+gives you. `FareSummaryScreen` reads back whatever the UPI app's activity result contains and
+falls back to asking the rider directly ("Yes, paid" / "It failed") when that's not parseable,
+which is most of the time in practice - see `PaymentViewModel`.
 
 ## Project structure
 
@@ -99,10 +116,10 @@ app/src/main/java/com/amchiyatri/rider/
 │   │                    profile/, support/, splash/
 │   ├── theme/           Color, typography, MaterialTheme
 │   └── viewmodel/       Auth, Booking, Ride, Profile, Settings, Payment
-├── util/                ApiKeys, Dialer, PolylineDecoder, RazorpayResultBridge
-├── MainActivity.kt      Also implements Razorpay's PaymentResultWithDataListener
-└── AmchiYatriApp.kt      @HiltAndroidApp; initializes Places SDK + Razorpay Checkout
-functions/                Cloud Functions: dispatch.js (ride simulator), payments.js (Razorpay)
+├── util/                ApiKeys, Dialer, PolylineDecoder, UpiQrCode
+├── MainActivity.kt
+└── AmchiYatriApp.kt      @HiltAndroidApp; initializes the Places SDK
+functions/                Cloud Functions: dispatch.js (the ride-dispatch simulator)
 firestore.rules           Per-rider access control for users/ and rides/
 firestore.indexes.json    Composite index for the ride-history query
 ```
@@ -135,5 +152,6 @@ via `org.gradle.java.home` in `gradle.properties` or `JAVA_HOME` if you hit
 - No push notifications; ride status only updates while the app is open (Firestore listeners are
   live, but there's no FCM wake-up if the app is killed).
 - Directions-based fare/route calls happen directly from the device; for stricter key security
-  you could proxy them through a Cloud Function the same way payments are, at the cost of one more
-  network hop.
+  you could proxy them through a Cloud Function, at the cost of one more network hop.
+- Payments pay a single fixed UPI ID with no aggregator - see the Payments section above for what
+  that does and doesn't give you.

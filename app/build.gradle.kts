@@ -33,6 +33,12 @@ android {
 
         manifestPlaceholders["MAPS_API_KEY"] = secretsProperties.getProperty("MAPS_API_KEY", "DEFAULT_API_KEY")
 
+        // No payment-gateway merchant account needed: this pays a single fixed UPI VPA directly
+        // (QR code + UPI-app intent), the same mechanism every "scan to pay" shop counter uses.
+        // Put your own real VPA in app/secrets.properties to actually receive a test payment.
+        buildConfigField("String", "UPI_PAYEE_VPA", "\"${secretsProperties.getProperty("UPI_PAYEE_VPA", "example@upi")}\"")
+        buildConfigField("String", "UPI_PAYEE_NAME", "\"${secretsProperties.getProperty("UPI_PAYEE_NAME", "Amchi Yatri")}\"")
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -105,12 +111,11 @@ dependencies {
     // Local persistence for preferences (language choice, saved places, session)
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 
-    // Firebase: phone-OTP auth + Firestore (live ride state) + Functions (dispatch simulator,
-    // Razorpay order creation/verification). Versions are pinned by the BOM.
+    // Firebase: phone-OTP auth + Firestore (live ride state; the dispatch simulator in
+    // functions/dispatch.js is a Firestore trigger, so the app never calls Functions directly).
     implementation(platform("com.google.firebase:firebase-bom:33.1.2"))
     implementation("com.google.firebase:firebase-auth-ktx")
     implementation("com.google.firebase:firebase-firestore-ktx")
-    implementation("com.google.firebase:firebase-functions-ktx")
 
     // Google Maps: live map, device location, place autocomplete, real routing.
     implementation("com.google.android.gms:play-services-maps:19.0.0")
@@ -124,9 +129,8 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
 
-    // Razorpay Checkout (UPI/cards/wallets). Order creation + signature verification happen in
-    // Cloud Functions (functions/) - the secret key must never live in the app.
-    implementation("com.razorpay:checkout:1.6.40")
+    // QR code generation for the UPI payment screen.
+    implementation("com.google.zxing:core:3.5.3")
 
     // Testing
     testImplementation("junit:junit:4.13.2")

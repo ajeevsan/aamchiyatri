@@ -3,7 +3,6 @@ package com.amchiyatri.rider
 import android.app.Application
 import com.amchiyatri.rider.util.ApiKeys
 import com.google.android.libraries.places.api.Places
-import com.razorpay.Checkout
 import dagger.hilt.android.HiltAndroidApp
 
 @HiltAndroidApp
@@ -13,6 +12,5 @@ class AmchiYatriApp : Application() {
         if (!Places.isInitialized()) {
             Places.initialize(applicationContext, ApiKeys.mapsApiKey(this))
         }
-        Checkout.preload(applicationContext)
     }
 }
