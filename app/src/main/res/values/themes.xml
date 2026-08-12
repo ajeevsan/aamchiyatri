@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base application theme. The real theming (colors, typography, shapes) lives in
+         ui/theme/Theme.kt as Compose MaterialTheme — this only sets the pre-Compose
+         window background so there's no flash of the wrong color on cold start. -->
+    <style name="Theme.AmchiYatri" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@android:color/white</item>
+        <item name="android:statusBarColor">@android:color/white</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>
