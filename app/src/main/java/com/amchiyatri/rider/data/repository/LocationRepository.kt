@@ -1,22 +1,50 @@
 package com.amchiyatri.rider.data.repository
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.location.Geocoder
+import android.os.Looper
+import androidx.core.content.ContextCompat
 import com.amchiyatri.rider.data.model.GeoPoint
 import com.amchiyatri.rider.data.model.PlaceSuggestion
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.Priority
+import com.google.android.libraries.places.api.model.AutocompleteSessionToken
+import com.google.android.libraries.places.api.model.Place
+import com.google.android.libraries.places.api.model.RectangularBounds
+import com.google.android.libraries.places.api.net.FetchPlaceRequest
+import com.google.android.libraries.places.api.net.FindAutocompletePredictionsRequest
+import com.google.android.libraries.places.api.net.PlacesClient
+import com.google.android.gms.maps.model.LatLng
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Place search + "my current location". The real implementation would call the Places
- * Autocomplete API (or an open alternative like Mapbox/OSM Nominatim) and the Fused Location
- * Provider; this fake serves a fixed list of well-known Mumbai landmarks so the whole booking
- * flow is exercised without any Maps API key.
+ * Place search + "my current location".
+ *
+ * [GoogleLocationRepository] is the real implementation: Fused Location Provider for the
+ * rider's live position, Places Autocomplete + Place Details for search, and Android's Geocoder
+ * for reverse-geocoding "current location" into a readable address. [FakeLocationRepository]
+ * remains for offline development / before you've added a Maps API key - see SETUP.md.
  */
 interface LocationRepository {
-    /** Rider's live position, simulated near Bandra, Mumbai. */
+    /** Rider's live position. Starts at a Mumbai default until [startLocationUpdates] reports a fix. */
     val currentLocation: StateFlow<GeoPoint>
 
     val recentSearches: StateFlow<List<PlaceSuggestion>>
@@ -25,7 +53,118 @@ interface LocationRepository {
 
     fun rememberRecent(place: PlaceSuggestion)
 
-    fun reverseGeocodeCurrentLocation(): PlaceSuggestion
+    suspend fun reverseGeocodeCurrentLocation(): PlaceSuggestion
+
+    /** Starts live GPS updates. No-ops until ACCESS_FINE_LOCATION is granted; safe to call repeatedly. */
+    fun startLocationUpdates()
+
+    fun stopLocationUpdates()
+}
+
+@Singleton
+class GoogleLocationRepository @Inject constructor(
+    @ApplicationContext private val context: Context,
+    private val fusedLocationClient: FusedLocationProviderClient,
+    private val placesClient: PlacesClient,
+) : LocationRepository {
+
+    private val _currentLocation = MutableStateFlow(GeoPoint(19.0760, 72.8777)) // Mumbai (CST) default
+    override val currentLocation: StateFlow<GeoPoint> = _currentLocation.asStateFlow()
+
+    private val _recentSearches = MutableStateFlow<List<PlaceSuggestion>>(emptyList())
+    override val recentSearches: StateFlow<List<PlaceSuggestion>> = _recentSearches.asStateFlow()
+
+    private var locationCallback: LocationCallback? = null
+
+    // Mumbai metropolitan region, used to bias/restrict autocomplete results.
+    private val mumbaiBounds = RectangularBounds.newInstance(
+        LatLng(18.85, 72.75),
+        LatLng(19.30, 73.05),
+    )
+
+    private fun hasLocationPermission() = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.ACCESS_FINE_LOCATION,
+    ) == PackageManager.PERMISSION_GRANTED
+
+    override fun startLocationUpdates() {
+        if (!hasLocationPermission() || locationCallback != null) return
+
+        val callback = object : LocationCallback() {
+            override fun onLocationResult(result: LocationResult) {
+                result.lastLocation?.let { _currentLocation.value = GeoPoint(it.latitude, it.longitude) }
+            }
+        }
+        locationCallback = callback
+
+        try {
+            fusedLocationClient.lastLocation.addOnSuccessListener { location ->
+                location?.let { _currentLocation.value = GeoPoint(it.latitude, it.longitude) }
+            }
+            val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 5_000L).build()
+            fusedLocationClient.requestLocationUpdates(request, callback, Looper.getMainLooper())
+        } catch (e: SecurityException) {
+            locationCallback = null
+        }
+    }
+
+    override fun stopLocationUpdates() {
+        locationCallback?.let { fusedLocationClient.removeLocationUpdates(it) }
+        locationCallback = null
+    }
+
+    override suspend fun search(query: String): List<PlaceSuggestion> {
+        if (query.isBlank()) return emptyList()
+
+        val request = FindAutocompletePredictionsRequest.builder()
+            .setSessionToken(AutocompleteSessionToken.newInstance())
+            .setLocationRestriction(mumbaiBounds)
+            .setQuery(query)
+            .build()
+
+        val predictions = runCatching {
+            placesClient.findAutocompletePredictions(request).await().autocompletePredictions
+        }.getOrElse { return emptyList() }.take(6)
+
+        // Autocomplete predictions don't carry lat/lng - resolve each with a Place Details call,
+        // in parallel, so one search doesn't take N sequential round-trips.
+        return coroutineScope {
+            predictions.map { prediction ->
+                async {
+                    val place = runCatching {
+                        placesClient.fetchPlace(
+                            FetchPlaceRequest.newInstance(prediction.placeId, listOf(Place.Field.LAT_LNG)),
+                        ).await().place
+                    }.getOrNull()
+                    val point = place?.latLng?.let { GeoPoint(it.latitude, it.longitude) } ?: return@async null
+                    PlaceSuggestion(
+                        title = prediction.getPrimaryText(null).toString(),
+                        subtitle = prediction.getSecondaryText(null).toString(),
+                        point = point,
+                    )
+                }
+            }.awaitAll().filterNotNull()
+        }
+    }
+
+    override fun rememberRecent(place: PlaceSuggestion) {
+        val recent = place.copy(isRecent = true)
+        _recentSearches.value = (listOf(recent) + _recentSearches.value.filterNot { it.title == place.title }).take(5)
+    }
+
+    override suspend fun reverseGeocodeCurrentLocation(): PlaceSuggestion = withContext(Dispatchers.IO) {
+        val point = _currentLocation.value
+        val address = runCatching {
+            @Suppress("DEPRECATION") // The async Geocoder overload needs API 33+; this still works fine below that.
+            Geocoder(context, Locale.getDefault()).getFromLocation(point.lat, point.lng, 1)?.firstOrNull()
+        }.getOrNull()
+
+        PlaceSuggestion(
+            title = "Current location",
+            subtitle = address?.getAddressLine(0) ?: "Mumbai",
+            point = point,
+        )
+    }
 }
 
 @Singleton
@@ -71,7 +210,7 @@ class FakeLocationRepository @Inject constructor() : LocationRepository {
         _recentSearches.value = (listOf(recent) + _recentSearches.value.filterNot { it.title == place.title }).take(5)
     }
 
-    override fun reverseGeocodeCurrentLocation(): PlaceSuggestion {
+    override suspend fun reverseGeocodeCurrentLocation(): PlaceSuggestion {
         val point = _currentLocation.value
         return PlaceSuggestion(
             title = "Current location",
@@ -79,4 +218,8 @@ class FakeLocationRepository @Inject constructor() : LocationRepository {
             point = point,
         )
     }
+
+    override fun startLocationUpdates() = Unit
+
+    override fun stopLocationUpdates() = Unit
 }

@@ -1,0 +1,19 @@
+{
+  "name": "amchi-yatri-functions",
+  "description": "Cloud Functions backend for Amchi Yatri: ride-dispatch simulator + Razorpay order/verification",
+  "main": "index.js",
+  "engines": {
+    "node": "20"
+  },
+  "scripts": {
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log",
+    "shell": "firebase functions:shell"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.3.1",
+    "firebase-functions": "^5.1.1",
+    "razorpay": "^2.9.4"
+  },
+  "private": true
+}

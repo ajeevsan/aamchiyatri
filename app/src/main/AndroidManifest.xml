@@ -9,8 +9,6 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Ride status / driver-arrived alerts -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- One-tap dial for SOS and rider support -->
-    <uses-permission android:name="android.permission.CALL_PHONE" />
 
     <application
         android:name=".AmchiYatriApp"
@@ -21,6 +19,13 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.AmchiYatri"
         android:usesCleartextTraffic="false">
+
+        <!-- Populated at build time by the Secrets Gradle Plugin from app/secrets.properties
+             (falls back to the placeholder in app/local.defaults.properties). Used by both the
+             Maps SDK and, read back at runtime, to initialize the Places SDK - see ApiKeys.kt. -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="${MAPS_API_KEY}" />
 
         <activity
             android:name=".MainActivity"

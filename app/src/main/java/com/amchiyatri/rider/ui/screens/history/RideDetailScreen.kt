@@ -25,7 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.amchiyatri.rider.ui.components.MockMap
+import com.amchiyatri.rider.ui.components.AmchiYatriMap
 import com.amchiyatri.rider.ui.viewmodel.RideViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -54,10 +54,11 @@ fun RideDetailScreen(
         }
 
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            MockMap(
+            AmchiYatriMap(
                 modifier = Modifier.fillMaxWidth().height(200.dp),
                 pickup = ride.pickup.point,
                 drop = ride.drop.point,
+                routePoints = ride.routePolyline,
             )
 
             Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {

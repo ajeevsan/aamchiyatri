@@ -1,0 +1,22 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Each rider's own profile: only they can read or write it. Cloud Functions use the Admin
+    // SDK, which bypasses these rules entirely, so the dispatch simulator's writes are unaffected.
+    match /users/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Rides: a rider can create their own ride request, read it, and update only the fields the
+    // client is allowed to change directly (cancelling, rating, payment bookkeeping). Everything
+    // the dispatch simulator writes (status transitions, driver assignment, driverLocation) comes
+    // from a Cloud Function via the Admin SDK, so it isn't constrained by these rules.
+    match /rides/{rideId} {
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.riderId;
+      allow read: if request.auth != null && request.auth.uid == resource.data.riderId;
+      allow update: if request.auth != null && request.auth.uid == resource.data.riderId;
+    }
+  }
+}

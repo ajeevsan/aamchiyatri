@@ -38,7 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.amchiyatri.rider.data.model.FareEstimate
 import com.amchiyatri.rider.data.model.PaymentMethod
-import com.amchiyatri.rider.ui.components.MockMap
+import com.amchiyatri.rider.ui.components.AmchiYatriMap
 import com.amchiyatri.rider.ui.components.PrimaryButton
 import com.amchiyatri.rider.ui.viewmodel.BookingViewModel
 import java.util.Locale
@@ -90,10 +90,11 @@ fun RideOptionsScreen(
         },
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            MockMap(
+            AmchiYatriMap(
                 modifier = Modifier.fillMaxWidth().height(180.dp),
                 pickup = state.pickup?.point,
                 drop = state.drop?.point,
+                routePoints = state.routePolyline,
             )
 
             RouteSummary(pickupTitle = state.pickup?.title, dropTitle = state.drop?.title)

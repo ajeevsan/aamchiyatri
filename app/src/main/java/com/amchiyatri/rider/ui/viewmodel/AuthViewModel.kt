@@ -1,5 +1,6 @@
 package com.amchiyatri.rider.ui.viewmodel
 
+import android.app.Activity
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -34,13 +35,13 @@ class AuthViewModel @Inject constructor(
     }
 
     fun onOtpChange(value: String) {
-        uiState = uiState.copy(otp = value.filter { it.isDigit() }.take(4), errorMessage = null)
+        uiState = uiState.copy(otp = value.filter { it.isDigit() }.take(6), errorMessage = null)
     }
 
-    fun sendOtp(onSent: () -> Unit) {
+    fun sendOtp(activity: Activity, onSent: () -> Unit) {
         viewModelScope.launch {
             uiState = uiState.copy(isLoading = true, errorMessage = null)
-            authRepository.sendOtp(uiState.phoneNumber)
+            authRepository.sendOtp(uiState.phoneNumber, activity)
                 .onSuccess {
                     uiState = uiState.copy(isLoading = false, otpSentTo = uiState.phoneNumber)
                     onSent()
@@ -51,9 +52,9 @@ class AuthViewModel @Inject constructor(
         }
     }
 
-    fun resendOtp() {
+    fun resendOtp(activity: Activity) {
         viewModelScope.launch {
-            authRepository.resendOtp(uiState.phoneNumber)
+            authRepository.resendOtp(uiState.phoneNumber, activity)
         }
     }
 

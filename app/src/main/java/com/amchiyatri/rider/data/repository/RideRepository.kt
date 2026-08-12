@@ -7,6 +7,12 @@ import com.amchiyatri.rider.data.model.PaymentMethod
 import com.amchiyatri.rider.data.model.PlaceSuggestion
 import com.amchiyatri.rider.data.model.Ride
 import com.amchiyatri.rider.data.model.RideStatus
+import com.amchiyatri.rider.data.remote.fromFirestore
+import com.amchiyatri.rider.data.remote.ridePlaceholderMap
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.Query
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -16,6 +22,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import kotlin.random.Random
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -23,11 +30,16 @@ import javax.inject.Singleton
 /**
  * Owns the full ride lifecycle: request -> search -> match -> arrive -> trip -> complete.
  *
- * This fake drives the state machine itself with coroutine delays and a pretend driver, standing
- * in for what would otherwise be a Beckn-style dispatch backend (search/select/init/confirm/track
- * calls) talking to real driver-partner apps. Every downstream screen (searching, driver-assigned,
- * live tracking, fare summary) only ever reads [activeRide], so replacing this with real network
- * calls + push/socket updates does not require touching the UI layer.
+ * [FirestoreRideRepository] only ever writes the *request*; matching, driver assignment and
+ * live location updates are all done by a Cloud Function (functions/dispatch.js) reacting to
+ * that write, and streamed back down via a Firestore snapshot listener. That split is what makes
+ * this "real-time" rather than a client-side animation: the simulation runs server-side and every
+ * device watching the ride document sees the same state at the same time.
+ *
+ * [FakeRideRepository] drives the exact same state machine itself with coroutine delays, for
+ * offline dev - see SETUP.md. Every downstream screen (searching, driver-assigned, live tracking,
+ * fare summary) only ever reads [activeRide], so which implementation is wired in doesn't affect
+ * the UI layer at all.
  */
 interface RideRepository {
     val activeRide: StateFlow<Ride?>
@@ -38,6 +50,7 @@ interface RideRepository {
         drop: PlaceSuggestion,
         fare: FareEstimate,
         paymentMethod: PaymentMethod,
+        routePolyline: List<GeoPoint> = emptyList(),
     )
 
     fun cancelRide(reason: String)
@@ -46,6 +59,99 @@ interface RideRepository {
 
     /** Dismisses a completed/cancelled ride from [activeRide] once the rider has seen its summary. */
     fun clearActiveRide()
+}
+
+@Singleton
+class FirestoreRideRepository @Inject constructor(
+    private val firestore: FirebaseFirestore,
+    private val firebaseAuth: FirebaseAuth,
+) : RideRepository {
+
+    private val repoScope = CoroutineScope(SupervisorJob())
+
+    private val _activeRide = MutableStateFlow<Ride?>(null)
+    override val activeRide: StateFlow<Ride?> = _activeRide.asStateFlow()
+
+    private val _rideHistory = MutableStateFlow<List<Ride>>(emptyList())
+    override val rideHistory: StateFlow<List<Ride>> = _rideHistory.asStateFlow()
+
+    private var activeRideListener: ListenerRegistration? = null
+    private var historyListener: ListenerRegistration? = null
+    private var activeRideId: String? = null
+
+    init {
+        firebaseAuth.addAuthStateListener { auth ->
+            val uid = auth.currentUser?.uid
+            if (uid != null) {
+                listenToHistory(uid)
+            } else {
+                historyListener?.remove()
+                _rideHistory.value = emptyList()
+            }
+        }
+    }
+
+    override fun requestRide(
+        pickup: PlaceSuggestion,
+        drop: PlaceSuggestion,
+        fare: FareEstimate,
+        paymentMethod: PaymentMethod,
+        routePolyline: List<GeoPoint>,
+    ) {
+        val uid = firebaseAuth.currentUser?.uid ?: return
+        val data = ridePlaceholderMap(uid, fare.vehicleType, pickup, drop, fare, paymentMethod, routePolyline)
+
+        val docRef = firestore.collection("rides").document()
+        activeRideId = docRef.id
+        listenToActiveRide(docRef.id)
+        docRef.set(data)
+        // The onRideCreated Cloud Function (functions/dispatch.js) picks this document up from
+        // here and drives status/driver/driverLocation forward - nothing else to do client-side.
+    }
+
+    private fun listenToActiveRide(rideId: String) {
+        activeRideListener?.remove()
+        activeRideListener = firestore.collection("rides").document(rideId)
+            .addSnapshotListener { snapshot, _ ->
+                _activeRide.value = snapshot?.let { Ride.fromFirestore(it) }
+            }
+    }
+
+    private fun listenToHistory(uid: String) {
+        historyListener?.remove()
+        historyListener = firestore.collection("rides")
+            .whereEqualTo("riderId", uid)
+            .whereIn("status", listOf(RideStatus.COMPLETED.name, RideStatus.CANCELLED.name))
+            .orderBy("requestedAt", Query.Direction.DESCENDING)
+            .addSnapshotListener { snapshot, _ ->
+                _rideHistory.value = snapshot?.documents?.mapNotNull { Ride.fromFirestore(it) } ?: emptyList()
+            }
+    }
+
+    override fun cancelRide(reason: String) {
+        val rideId = activeRideId ?: return
+        firestore.collection("rides").document(rideId)
+            .update(mapOf("status" to RideStatus.CANCELLED.name, "cancelReason" to reason))
+    }
+
+    override suspend fun submitRating(stars: Int, tipAmount: Double, feedbackTags: List<String>) {
+        val rideId = activeRideId ?: return
+        val current = _activeRide.value ?: return
+        firestore.collection("rides").document(rideId).update(
+            mapOf(
+                "riderRating" to stars,
+                "finalFare" to (current.finalFare ?: current.fare.totalFare) + tipAmount,
+                "feedbackTags" to feedbackTags,
+            ),
+        ).await()
+    }
+
+    override fun clearActiveRide() {
+        activeRideListener?.remove()
+        activeRideListener = null
+        activeRideId = null
+        _activeRide.value = null
+    }
 }
 
 @Singleton
@@ -71,6 +177,7 @@ class FakeRideRepository @Inject constructor() : RideRepository {
         drop: PlaceSuggestion,
         fare: FareEstimate,
         paymentMethod: PaymentMethod,
+        routePolyline: List<GeoPoint>,
     ) {
         simulationJob?.cancel()
 
@@ -81,6 +188,7 @@ class FakeRideRepository @Inject constructor() : RideRepository {
             drop = drop,
             fare = fare,
             paymentMethod = paymentMethod,
+            routePolyline = routePolyline,
         )
         _activeRide.value = ride
 

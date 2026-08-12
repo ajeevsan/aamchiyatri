@@ -3,6 +3,7 @@ package com.amchiyatri.rider.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.amchiyatri.rider.data.model.FareEstimate
+import com.amchiyatri.rider.data.model.GeoPoint
 import com.amchiyatri.rider.data.model.PaymentMethod
 import com.amchiyatri.rider.data.model.PlaceSuggestion
 import com.amchiyatri.rider.data.model.SavedPlace
@@ -13,6 +14,8 @@ import com.amchiyatri.rider.data.repository.ProfileRepository
 import com.amchiyatri.rider.data.repository.RideRepository
 import com.amchiyatri.rider.ui.navigation.LocationField
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -30,6 +33,7 @@ data class BookingUiState(
     val searchResults: List<PlaceSuggestion> = emptyList(),
     val isSearching: Boolean = false,
     val fareEstimates: List<FareEstimate> = emptyList(),
+    val routePolyline: List<GeoPoint> = emptyList(),
     val isLoadingFares: Boolean = false,
     val selectedVehicle: VehicleType? = null,
     val paymentMethod: PaymentMethod = PaymentMethod.CASH,
@@ -63,13 +67,22 @@ class BookingViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
-        setPlace(LocationField.PICKUP, locationRepository.reverseGeocodeCurrentLocation())
+        viewModelScope.launch {
+            setPlace(LocationField.PICKUP, locationRepository.reverseGeocodeCurrentLocation())
+        }
     }
+
+    /** Call once ACCESS_FINE_LOCATION is granted (see AmchiYatriNavGraph) to start live GPS updates. */
+    fun startLocationUpdates() = locationRepository.startLocationUpdates()
+
+    private var searchJob: Job? = null
 
     fun onSearchQueryChange(query: String) {
         _uiState.update { it.copy(searchQuery = query) }
-        viewModelScope.launch {
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
             _uiState.update { it.copy(isSearching = true) }
+            delay(350) // debounce: avoid firing a Places Autocomplete + Details call per keystroke
             val results = locationRepository.search(query)
             _uiState.update { it.copy(searchResults = results, isSearching = false) }
         }
@@ -98,10 +111,12 @@ class BookingViewModel @Inject constructor(
         if (pickup == null || drop == null) return
         viewModelScope.launch {
             _uiState.update { it.copy(isLoadingFares = true) }
-            val estimates = fareRepository.estimateFares(pickup.point, drop.point)
+            val route = fareRepository.getRoute(pickup.point, drop.point)
+            val estimates = fareRepository.estimateFares(route)
             _uiState.update {
                 it.copy(
                     fareEstimates = estimates,
+                    routePolyline = route.polyline,
                     isLoadingFares = false,
                     selectedVehicle = it.selectedVehicle ?: estimates.firstOrNull()?.vehicleType,
                 )
@@ -123,11 +138,12 @@ class BookingViewModel @Inject constructor(
         val pickup = state.pickup ?: return
         val drop = state.drop ?: return
         val fare = state.selectedFare ?: return
-        rideRepository.requestRide(pickup, drop, fare, state.paymentMethod)
+        rideRepository.requestRide(pickup, drop, fare, state.paymentMethod, state.routePolyline)
         _uiState.update {
             it.copy(
                 drop = null,
                 fareEstimates = emptyList(),
+                routePolyline = emptyList(),
                 selectedVehicle = null,
                 searchQuery = "",
                 searchResults = emptyList(),

@@ -41,7 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.amchiyatri.rider.data.model.SavedPlaceLabel
 import com.amchiyatri.rider.ui.components.AmchiYatriBottomBar
-import com.amchiyatri.rider.ui.components.MockMap
+import com.amchiyatri.rider.ui.components.AmchiYatriMap
 import com.amchiyatri.rider.ui.navigation.Destinations
 import com.amchiyatri.rider.ui.navigation.LocationField
 import com.amchiyatri.rider.ui.viewmodel.BookingViewModel
@@ -64,7 +64,7 @@ fun HomeScreen(
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             Column(modifier = Modifier.fillMaxSize()) {
                 Box(modifier = Modifier.fillMaxWidth().height(260.dp)) {
-                    MockMap(
+                    AmchiYatriMap(
                         modifier = Modifier.fillMaxSize(),
                         pickup = state.pickup?.point ?: currentLocation,
                     )

@@ -4,82 +4,83 @@ An Android rider app for Mumbai, built in the spirit of [Namma Yatri](https://gi
 the open-source, zero-commission auto/cab booking platform from Bengaluru. "Amchi" is Marathi for
 "our," mirroring "Namma" (Kannada for "our"): same idea, Mumbai edition.
 
-This is a **complete, self-contained rider app** — onboarding through payment and rating — that
-builds and runs with **no API keys, no backend, and no account signups**. Maps, OTP delivery, and
-payments are all implemented behind small interfaces with realistic fake/simulated data, so the
-whole booking flow works end-to-end out of the box. Swap any one of them for a real integration
-later without touching the UI layer — see [Going live](#going-live-swapping-in-real-services)
-below.
+This is a **complete rider app** — onboarding through payment and rating — wired to **real
+services**: Firebase Phone Auth, live Firestore-backed ride dispatch, Google Maps/Places/
+Directions, and Razorpay. A Cloud Functions backend ([`functions/`](functions)) runs the actual
+driver-matching simulation server-side, so ride tracking is genuinely real-time across devices,
+not a client-side animation.
+
+**New checkout: see [SETUP.md](SETUP.md) for the exact steps** to connect your own Firebase/Google
+Cloud/Razorpay accounts — none of that can be done for you, since it needs your credentials. Until
+you do, the app builds fine but won't run (no Firebase project = crash on launch).
+
+Every real integration still has an offline, no-account `Fake*` counterpart in the same file for
+local development — see [Rolling back to fakes](SETUP.md#rolling-back-to-fakes-for-offline-development).
 
 ## What's implemented
 
-- **Onboarding**: splash screen, language selection (English / Hindi / Marathi), phone number +
-  OTP login (demo OTP is always `1234`)
-- **Booking**: current-location pickup, destination search over real Mumbai landmarks, Home/Work
-  quick-fill, recent destinations
-- **Fare estimation**: Auto / Bike / Sedan / SUV options with distance- and time-based fares,
-  occasional surge pricing, ETAs — computed from real haversine distance between pickup and drop
-- **Ride lifecycle**: searching for a driver, driver assigned (name, rating, vehicle, phone),
-  start-OTP, live map tracking as the driver approaches and then drives the trip, trip completion
-- **Safety**: an SOS button during any active ride (call police / call an emergency contact /
-  share trip), emergency contacts management in Profile
-- **Payments**: Cash / UPI / Wallet selection, itemised fare breakdown, tipping
+- **Onboarding**: splash screen, language selection (English / Hindi / Marathi), real phone
+  number + SMS OTP login via Firebase Phone Auth (auto-retrieval where the device supports it)
+- **Booking**: live GPS pickup location, Places Autocomplete search restricted to Mumbai,
+  Home/Work quick-fill, recent destinations
+- **Fare estimation**: Auto / Bike / Sedan / SUV options priced off real road distance/duration
+  from the Directions API, with a drawn route polyline, occasional surge pricing
+- **Ride lifecycle**: request → a Cloud Function (`onRideCreated`) matches a driver, animates
+  their approach and the trip on a live Google Map, all streamed back via a Firestore listener
+- **Safety**: an SOS button during any active ride (real one-tap dial to police/emergency
+  contacts via `ACTION_DIAL`), emergency contacts management in Profile
+- **Payments**: Cash (skips the gateway) or UPI/Wallet via real Razorpay Checkout, with order
+  creation and signature verification done server-side in Cloud Functions
 - **Ratings**: 5-star rating with contextual positive/negative feedback tags
-- **Ride history**: full list + per-trip detail view
+- **Ride history**: full list + per-trip detail view, synced live from Firestore
 - **Profile**: name/email/gender, saved places (Home/Work/Other), emergency contacts, language
-  switch, help & FAQs, logout
+  switch, help & FAQs, logout — persisted to Firestore (`users/{uid}`)
 
 ## Tech stack
 
 - Kotlin + Jetpack Compose (Material 3), single-Activity
 - MVVM: `ViewModel` + `StateFlow`, Navigation Compose
 - Hilt for dependency injection
+- Firebase: Auth (phone), Firestore (profile + ride state), Cloud Functions (dispatch simulator,
+  Razorpay order/verify)
+- Google Maps SDK, Places SDK, Directions API (via Retrofit), Fused Location Provider
+- Razorpay Android Checkout SDK
 - DataStore for on-device preferences (language)
-- No Maps SDK, no networking library, no payment SDK — see below
 
-## Architecture: why it's all "fakes," and how that's meant to be used
+## Architecture: real implementations, fakes kept alongside
 
 Every external dependency — maps, OTP delivery, place search, payments, the driver-matching
-backend — sits behind a small Kotlin interface in `data/repository/`:
+backend — sits behind a small Kotlin interface in `data/repository/`, each with **two**
+implementations in the same file:
 
-| Interface | Fake implementation | What it stands in for |
-|---|---|---|
-| `AuthRepository` | `FakeAuthRepository` | SMS OTP provider (Firebase Auth phone sign-in, MSG91, 2Factor…) |
-| `LocationRepository` | `FakeLocationRepository` | Places Autocomplete + Fused Location Provider |
-| `FareRepository` | `DefaultFareRepository` | Directions/routing API for real road distance & ETA |
-| `RideRepository` | `FakeRideRepository` | A dispatch/matching backend (Beckn-style search → select → confirm → track) |
-| `ProfileRepository` | `FakeProfileRepository` | Your user-profile microservice |
+| Interface | Real implementation | Fake (offline dev) | What it talks to |
+|---|---|---|---|
+| `AuthRepository` | `FirebaseAuthRepository` | `FakeAuthRepository` | Firebase Phone Auth |
+| `ProfileRepository` | `FirestoreProfileRepository` | `FakeProfileRepository` | Firestore `users/{uid}` |
+| `LocationRepository` | `GoogleLocationRepository` | `FakeLocationRepository` | Places Autocomplete + Fused Location Provider |
+| `FareRepository` | `DirectionsFareRepository` | `FakeFareRepository` | Directions API |
+| `RideRepository` | `FirestoreRideRepository` | `FakeRideRepository` | Firestore `rides/{rideId}` + `functions/dispatch.js` |
+| `PaymentRepository` | `RazorpayPaymentRepository` | `FakePaymentRepository` | Razorpay via `functions/payments.js` |
 
-All five are wired up in one place: [`di/RepositoryModule.kt`](app/src/main/java/com/amchiyatri/rider/di/RepositoryModule.kt).
-Nothing in `ui/` talks to a "Fake*" class directly — screens and ViewModels only ever see the
-interface. That means going live is a matter of writing a new class that implements the interface
-against a real API and changing the one `@Binds` line that points to it, not rewriting screens.
+All six are wired up in one place: [`di/RepositoryModule.kt`](app/src/main/java/com/amchiyatri/rider/di/RepositoryModule.kt).
+Nothing in `ui/` talks to a concrete class directly — screens and ViewModels only ever see the
+interface, so switching between real and fake (or swapping in a different provider entirely) is a
+one-line change per repository.
 
-The map itself ([`ui/components/MockMap.kt`](app/src/main/java/com/amchiyatri/rider/ui/components/MockMap.kt))
-is a `Canvas`-based projection of pickup/drop/driver lat-lngs — deliberately not a real map, so
-there's zero Maps API key dependency. It's built so a real `GoogleMap` composable (from
-`com.google.maps.android:maps-compose`) can be dropped in behind the same `pickup`/`drop`/`driver`
-parameters.
+The map ([`ui/components/AmchiYatriMap.kt`](app/src/main/java/com/amchiyatri/rider/ui/components/AmchiYatriMap.kt))
+is a real `GoogleMap` (via `maps-compose`) with pickup/drop/driver markers and a decoded route
+polyline. The old dependency-free `Canvas` mock (`ui/components/MockMap.kt`) is still in the repo,
+unused by default, in case you ever want to strip the Maps dependency again.
 
-## Going live: swapping in real services
+## Server-side pieces (`functions/`, `firestore.rules`, `firestore.indexes.json`)
 
-1. **Maps**: add `com.google.maps.android:maps-compose`, get a Google Maps API key, replace the
-   body of `MockMap` with a `GoogleMap { Marker(...) }`, add the key to your manifest /
-   `local.properties` per the [Maps Compose docs](https://developers.google.com/maps/documentation/android-sdk/maps-compose).
-2. **OTP / auth**: implement `AuthRepository` against Firebase Auth phone sign-in or an SMS
-   gateway; rebind it in `RepositoryModule`.
-3. **Place search**: implement `LocationRepository.search()` against Google Places Autocomplete
-   (or an open alternative like OSM Nominatim / Mapbox Search), and `currentLocation` against the
-   Fused Location Provider (`com.google.android.gms:play-services-location`).
-4. **Routing/fare**: implement `FareRepository.estimateFares()` against the Directions API (or
-   OSRM) for real road distance/duration instead of the haversine approximation.
-5. **Dispatch backend**: this is the big one — `RideRepository` currently *is* the backend
-   (a coroutine simulating driver search → assignment → arrival → trip → completion in-memory).
-   A real version needs an actual service matching riders to driver-partner apps — Namma Yatri's
-   own stack uses the open [Beckn protocol](https://becknprotocol.io/); you could build your own,
-   or integrate with an existing mobility network.
-6. **Payments**: wire a UPI intent (`upi://pay`) or a gateway SDK (Razorpay, PhonePe, Cashfree)
-   behind the payment-confirmation step in `FareSummaryScreen`.
+The biggest architectural change from a "fakes-only" build: ride dispatch is no longer simulated
+inside the Android app. Requesting a ride just creates a `rides/{rideId}` Firestore document; a
+Cloud Function (`functions/dispatch.js`) picks it up, assigns a (still simulated, for now) driver,
+and animates their location over time by writing updates to that same document — which every
+device watching it (via a Firestore snapshot listener) sees live. `functions/payments.js` does the
+equivalent for Razorpay: creating orders and verifying payment signatures server-side, since the
+secret key can never live in the app. See [SETUP.md](SETUP.md) to deploy these.
 
 ## Project structure
 
@@ -87,25 +88,32 @@ parameters.
 app/src/main/java/com/amchiyatri/rider/
 ├── data/
 │   ├── model/          Plain data classes (Ride, Driver, FareEstimate, UserProfile, ...)
-│   ├── repository/      Interfaces + Fake* implementations (see table above)
+│   ├── remote/          DirectionsApi (Retrofit) + Firestore (de)serialization mappers
+│   ├── repository/      Interfaces + real + Fake* implementations (see table above)
 │   └── local/           DataStore-backed preferences
-├── di/                  Hilt modules
+├── di/                  Hilt modules (repositories, network, Firebase/Maps/Places clients)
 ├── ui/
-│   ├── components/      MockMap, buttons, bottom nav bar
+│   ├── components/      AmchiYatriMap (real), MockMap (unused fallback), buttons, bottom nav
 │   ├── navigation/      Destinations + NavHost graph
 │   ├── screens/         onboarding/, auth/, home/, location/, booking/, ride/, history/,
 │   │                    profile/, support/, splash/
 │   ├── theme/           Color, typography, MaterialTheme
-│   └── viewmodel/       AuthViewModel, BookingViewModel, RideViewModel, ProfileViewModel,
-│                        SettingsViewModel
-├── MainActivity.kt
-└── AmchiYatriApp.kt      @HiltAndroidApp
+│   └── viewmodel/       Auth, Booking, Ride, Profile, Settings, Payment
+├── util/                ApiKeys, Dialer, PolylineDecoder, RazorpayResultBridge
+├── MainActivity.kt      Also implements Razorpay's PaymentResultWithDataListener
+└── AmchiYatriApp.kt      @HiltAndroidApp; initializes Places SDK + Razorpay Checkout
+functions/                Cloud Functions: dispatch.js (ride simulator), payments.js (Razorpay)
+firestore.rules           Per-rider access control for users/ and rides/
+firestore.indexes.json    Composite index for the ride-history query
 ```
 
 ## Running it
 
+**First, do the [SETUP.md](SETUP.md) steps** — without them the app builds but crashes on launch
+(no Firebase project configured yet).
+
 Open the project folder in Android Studio (Iguana or newer) and hit Run — it's a standard Gradle
-project, no extra setup needed. `local.properties` already points at this machine's Android SDK.
+project. `local.properties` already points at this machine's Android SDK.
 
 From the command line:
 
@@ -119,11 +127,13 @@ The debug build was verified to compile and package end-to-end while building th
 via `org.gradle.java.home` in `gradle.properties` or `JAVA_HOME` if you hit
 `java.lang.IllegalArgumentException` mentioning a Java version number during the build.
 
-## Known limitations (by design, for this build)
+## Known limitations
 
-- One driver app doesn't exist — the "driver" is a simulation inside `FakeRideRepository`. A real
-  product needs a companion driver-partner app and a real matching backend.
-- No persistence beyond the current process for ride history/profile (no local database) —
-  add Room if you need it to survive app restarts.
-- No push notifications; ride status only updates while the app is open.
-- Fare/detour logic is a reasonable approximation, not a routing engine.
+- There's still no driver-partner app — `onRideCreated` *simulates* a driver server-side rather
+  than matching a real one. Swapping in real drivers means building that companion app and
+  replacing `functions/dispatch.js`'s random assignment with an actual matching query.
+- No push notifications; ride status only updates while the app is open (Firestore listeners are
+  live, but there's no FCM wake-up if the app is killed).
+- Directions-based fare/route calls happen directly from the device; for stricter key security
+  you could proxy them through a Cloud Function the same way payments are, at the cost of one more
+  network hop.

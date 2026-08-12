@@ -1,7 +1,11 @@
 package com.amchiyatri.rider.ui.navigation
 
+import android.Manifest
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavType
@@ -44,6 +48,14 @@ fun AmchiYatriNavGraph() {
     val rideViewModel: RideViewModel = hiltViewModel(activity)
     val profileViewModel: ProfileViewModel = hiltViewModel(activity)
     val settingsViewModel: SettingsViewModel = hiltViewModel(activity)
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted -> if (granted) bookingViewModel.startLocationUpdates() }
+
+    LaunchedEffect(Unit) {
+        locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+    }
 
     fun goTo(route: String) = navController.navigate(route) {
         popUpTo(Destinations.HOME) { saveState = true }

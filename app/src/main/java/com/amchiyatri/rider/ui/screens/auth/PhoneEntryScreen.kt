@@ -1,5 +1,6 @@
 package com.amchiyatri.rider.ui.screens.auth
 
+import android.app.Activity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,6 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -27,6 +29,7 @@ fun PhoneEntryScreen(
     viewModel: AuthViewModel = hiltViewModel(),
 ) {
     val state = viewModel.uiState
+    val activity = LocalContext.current as Activity
 
     Column(
         modifier = Modifier
@@ -74,7 +77,7 @@ fun PhoneEntryScreen(
             isLoading = state.isLoading,
             modifier = Modifier.padding(top = 24.dp),
         ) {
-            viewModel.sendOtp { onOtpSent(state.phoneNumber) }
+            viewModel.sendOtp(activity) { onOtpSent(state.phoneNumber) }
         }
 
         Text(

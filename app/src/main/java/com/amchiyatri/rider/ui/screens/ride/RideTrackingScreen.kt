@@ -39,15 +39,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.amchiyatri.rider.data.model.Driver
 import com.amchiyatri.rider.data.model.EmergencyContact
 import com.amchiyatri.rider.data.model.RideStatus
-import com.amchiyatri.rider.ui.components.MockMap
+import com.amchiyatri.rider.ui.components.AmchiYatriMap
 import com.amchiyatri.rider.ui.components.PrimaryButton
 import com.amchiyatri.rider.ui.components.SecondaryButton
 import com.amchiyatri.rider.ui.viewmodel.RideViewModel
+import com.amchiyatri.rider.util.dialNumber
+import com.amchiyatri.rider.util.smsIntent
 
 @Composable
 fun RideTrackingScreen(
@@ -74,11 +77,12 @@ fun RideTrackingScreen(
     Scaffold { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             Column(modifier = Modifier.fillMaxSize()) {
-                MockMap(
+                AmchiYatriMap(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     pickup = currentRide.pickup.point,
                     drop = if (currentRide.status == RideStatus.ON_TRIP) currentRide.drop.point else null,
                     driver = currentRide.driverLocation,
+                    routePoints = currentRide.routePolyline,
                 )
 
                 Surface(tonalElevation = 4.dp) {
@@ -154,6 +158,7 @@ private fun DriverAssignedContent(
     onCancel: () -> Unit,
 ) {
     if (driver == null) return
+    val context = LocalContext.current
 
     val statusLine = when (status) {
         RideStatus.DRIVER_ASSIGNED -> "${driver.name.substringBefore(" ")} is on the way"
@@ -181,10 +186,10 @@ private fun DriverAssignedContent(
             }
         }
         FloatingActionButton(
-            onClick = { /* dial driver.phoneNumber via ACTION_DIAL once wired to a real number */ },
+            onClick = { context.dialNumber(driver.phoneNumber) },
             modifier = Modifier.padding(end = 8.dp),
         ) { Icon(Icons.Filled.Call, contentDescription = "Call driver") }
-        FloatingActionButton(onClick = { /* open chat/SMS to driver */ }) {
+        FloatingActionButton(onClick = { context.startActivity(smsIntent(driver.phoneNumber)) }) {
             Icon(Icons.AutoMirrored.Filled.Message, contentDescription = "Message driver")
         }
     }
@@ -237,6 +242,7 @@ private fun CancelRideDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit)
 
 @Composable
 private fun SosDialog(emergencyContacts: List<EmergencyContact>, onDismiss: () -> Unit) {
+    val context = LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Emergency assistance") },
@@ -247,10 +253,13 @@ private fun SosDialog(emergencyContacts: List<EmergencyContact>, onDismiss: () -
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(bottom = 16.dp),
                 )
-                PrimaryButton(text = "Call Police (112)", onClick = onDismiss)
+                PrimaryButton(text = "Call Police (112)", onClick = { context.dialNumber("112"); onDismiss() })
                 Spacer(modifier = Modifier.height(8.dp))
                 emergencyContacts.forEach { contact ->
-                    SecondaryButton(text = "Call ${contact.name}", onClick = onDismiss)
+                    SecondaryButton(
+                        text = "Call ${contact.name}",
+                        onClick = { context.dialNumber(contact.phoneNumber); onDismiss() },
+                    )
                     Spacer(modifier = Modifier.height(8.dp))
                 }
                 if (emergencyContacts.isEmpty()) {

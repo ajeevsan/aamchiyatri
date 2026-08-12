@@ -41,6 +41,13 @@ enum class VehicleType(
 
 enum class PaymentMethod { CASH, UPI, WALLET }
 
+/** A road route between two points, as returned by the Directions API (or approximated). */
+data class Route(
+    val distanceKm: Double,
+    val durationMin: Int,
+    val polyline: List<GeoPoint>,
+)
+
 data class FareEstimate(
     val vehicleType: VehicleType,
     val distanceKm: Double,
@@ -84,6 +91,7 @@ data class Ride(
     val drop: PlaceSuggestion,
     val fare: FareEstimate,
     val paymentMethod: PaymentMethod,
+    val routePolyline: List<GeoPoint> = emptyList(),
     val driver: Driver? = null,
     val startOtp: String? = null,
     val driverLocation: GeoPoint? = null,
@@ -91,7 +99,10 @@ data class Ride(
     val completedAtMillis: Long? = null,
     val finalFare: Double? = null,
     val riderRating: Int? = null,
-)
+) {
+    // Anchor for the Firestore (de)serialization extensions in data/remote/FirestoreMappers.kt.
+    companion object
+}
 
 data class EmergencyContact(
     val id: String = UUID.randomUUID().toString(),
@@ -109,7 +120,10 @@ data class UserProfile(
     val gender: Gender? = null,
     val emergencyContacts: List<EmergencyContact> = emptyList(),
     val savedPlaces: List<SavedPlace> = emptyList(),
-)
+) {
+    // Anchor for the Firestore (de)serialization extensions in data/remote/FirestoreMappers.kt.
+    companion object
+}
 
 enum class AppLanguage(val code: String, val label: String, val nativeLabel: String) {
     ENGLISH("en", "English", "English"),

@@ -1,5 +1,6 @@
 package com.amchiyatri.rider.ui.screens.ride
 
+import android.app.Activity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,19 +23,32 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.amchiyatri.rider.data.model.PaymentMethod
 import com.amchiyatri.rider.ui.components.PrimaryButton
+import com.amchiyatri.rider.ui.components.SecondaryButton
+import com.amchiyatri.rider.ui.viewmodel.PaymentStatus
+import com.amchiyatri.rider.ui.viewmodel.PaymentViewModel
+import com.amchiyatri.rider.ui.viewmodel.ProfileViewModel
 import com.amchiyatri.rider.ui.viewmodel.RideViewModel
 
 @Composable
 fun FareSummaryScreen(
     onContinueToRating: () -> Unit,
     rideViewModel: RideViewModel,
+    profileViewModel: ProfileViewModel = hiltViewModel(),
+    paymentViewModel: PaymentViewModel = hiltViewModel(),
 ) {
     val ride by rideViewModel.activeRide.collectAsState()
     val currentRide = ride ?: return
     val breakdown = rideViewModel.fareBreakdown(currentRide.fare)
+    val profile by profileViewModel.profile.collectAsState()
+    val paymentState = paymentViewModel.uiState
+    val activity = LocalContext.current as Activity
+    val amount = currentRide.finalFare ?: currentRide.fare.totalFare
 
     Scaffold { padding ->
         Column(
@@ -62,7 +76,7 @@ fun FareSummaryScreen(
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Text("Total fare", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         Text(
-                            "₹${(currentRide.finalFare ?: currentRide.fare.totalFare).toInt()}",
+                            "₹${amount.toInt()}",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                         )
@@ -72,13 +86,52 @@ fun FareSummaryScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                "Paid via ${currentRide.paymentMethod.name.lowercase().replaceFirstChar { it.uppercase() }}",
+                "Pay via ${currentRide.paymentMethod.name.lowercase().replaceFirstChar { it.uppercase() }}",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.outline,
             )
 
             Spacer(modifier = Modifier.weight(1f))
-            PrimaryButton(text = "Rate your trip", onClick = onContinueToRating)
+
+            if (currentRide.paymentMethod == PaymentMethod.CASH) {
+                Text(
+                    "Pay the driver directly, then continue.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+                PrimaryButton(text = "Rate your trip", onClick = onContinueToRating)
+            } else {
+                when (paymentState.status) {
+                    PaymentStatus.IDLE, PaymentStatus.PROCESSING -> {
+                        PrimaryButton(
+                            text = "Pay ₹${amount.toInt()}",
+                            isLoading = paymentState.status == PaymentStatus.PROCESSING,
+                        ) {
+                            paymentViewModel.startPayment(activity, currentRide.id, amount, profile?.phoneNumber.orEmpty())
+                        }
+                    }
+                    PaymentStatus.FAILED -> {
+                        Text(
+                            paymentState.errorMessage ?: "Payment failed",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(bottom = 8.dp),
+                        )
+                        SecondaryButton(text = "Try again") {
+                            paymentViewModel.startPayment(activity, currentRide.id, amount, profile?.phoneNumber.orEmpty())
+                        }
+                    }
+                    PaymentStatus.SUCCEEDED -> {
+                        Text(
+                            "Payment received",
+                            color = MaterialTheme.colorScheme.secondary,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(bottom = 8.dp),
+                        )
+                        PrimaryButton(text = "Rate your trip", onClick = onContinueToRating)
+                    }
+                }
+            }
         }
     }
 }

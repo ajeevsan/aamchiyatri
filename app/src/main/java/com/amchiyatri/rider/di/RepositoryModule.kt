@@ -1,14 +1,16 @@
 package com.amchiyatri.rider.di
 
 import com.amchiyatri.rider.data.repository.AuthRepository
-import com.amchiyatri.rider.data.repository.DefaultFareRepository
-import com.amchiyatri.rider.data.repository.FakeAuthRepository
-import com.amchiyatri.rider.data.repository.FakeLocationRepository
-import com.amchiyatri.rider.data.repository.FakeProfileRepository
-import com.amchiyatri.rider.data.repository.FakeRideRepository
+import com.amchiyatri.rider.data.repository.DirectionsFareRepository
 import com.amchiyatri.rider.data.repository.FareRepository
+import com.amchiyatri.rider.data.repository.FirebaseAuthRepository
+import com.amchiyatri.rider.data.repository.FirestoreProfileRepository
+import com.amchiyatri.rider.data.repository.FirestoreRideRepository
+import com.amchiyatri.rider.data.repository.GoogleLocationRepository
 import com.amchiyatri.rider.data.repository.LocationRepository
+import com.amchiyatri.rider.data.repository.PaymentRepository
 import com.amchiyatri.rider.data.repository.ProfileRepository
+import com.amchiyatri.rider.data.repository.RazorpayPaymentRepository
 import com.amchiyatri.rider.data.repository.RideRepository
 import dagger.Binds
 import dagger.Module
@@ -17,10 +19,15 @@ import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
 /**
- * Every binding below points at an in-memory "Fake*" implementation so the app is fully usable
- * offline, with no Maps/OTP/payment API keys. To go live, write a real implementation of the
- * interface (e.g. `RetrofitAuthRepository`, `GoogleMapsLocationRepository`,
- * `RazorpayAwarePaymentFlow`) and change only the `@Binds` line here — nothing in `ui/` changes.
+ * Every binding below points at the real, network-backed implementation: Firebase Phone Auth,
+ * Firestore (profile + ride dispatch), Google Maps/Places/Directions, and Razorpay via Cloud
+ * Functions. This needs app/google-services.json and app/secrets.properties in place - see
+ * SETUP.md - otherwise the app will crash on launch trying to reach a Firebase project that
+ * doesn't exist yet.
+ *
+ * Each interface also still has a `Fake*` in-memory implementation (see the matching repository
+ * file) for offline development. To fall back to those temporarily, swap the `impl` type on the
+ * `@Binds` method below - nothing in `ui/` changes either way.
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -28,21 +35,25 @@ abstract class RepositoryModule {
 
     @Binds
     @Singleton
-    abstract fun bindAuthRepository(impl: FakeAuthRepository): AuthRepository
+    abstract fun bindAuthRepository(impl: FirebaseAuthRepository): AuthRepository
 
     @Binds
     @Singleton
-    abstract fun bindProfileRepository(impl: FakeProfileRepository): ProfileRepository
+    abstract fun bindProfileRepository(impl: FirestoreProfileRepository): ProfileRepository
 
     @Binds
     @Singleton
-    abstract fun bindLocationRepository(impl: FakeLocationRepository): LocationRepository
+    abstract fun bindLocationRepository(impl: GoogleLocationRepository): LocationRepository
 
     @Binds
     @Singleton
-    abstract fun bindFareRepository(impl: DefaultFareRepository): FareRepository
+    abstract fun bindFareRepository(impl: DirectionsFareRepository): FareRepository
 
     @Binds
     @Singleton
-    abstract fun bindRideRepository(impl: FakeRideRepository): RideRepository
+    abstract fun bindRideRepository(impl: FirestoreRideRepository): RideRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindPaymentRepository(impl: RazorpayPaymentRepository): PaymentRepository
 }

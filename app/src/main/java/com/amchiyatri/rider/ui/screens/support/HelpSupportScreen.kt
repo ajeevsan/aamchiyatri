@@ -21,9 +21,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.amchiyatri.rider.ui.components.PrimaryButton
+import com.amchiyatri.rider.util.dialNumber
+
+// TODO: replace with your real rider-support line before shipping.
+private const val SUPPORT_PHONE_NUMBER = "+911800000000"
 
 private data class FaqItem(val question: String, val answer: String)
 
@@ -38,6 +43,7 @@ private val faqs = listOf(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HelpSupportScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
     Scaffold(
         topBar = {
             TopAppBar(
@@ -52,7 +58,7 @@ fun HelpSupportScreen(onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                PrimaryButton(text = "Call rider support") { /* dial support number once a real one is wired up */ }
+                PrimaryButton(text = "Call rider support") { context.dialNumber(SUPPORT_PHONE_NUMBER) }
             }
             item {
                 Text("Frequently asked questions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
