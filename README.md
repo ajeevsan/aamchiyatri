@@ -1,5 +1,14 @@
 # Amchi Yatri
 
+<img width="376" height="839" alt="image" src="https://github.com/user-attachments/assets/8e1916fe-079b-4956-9e77-36828aca0853" />
+<img width="384" height="831" alt="image" src="https://github.com/user-attachments/assets/6178abdd-d0ae-4bc1-877b-58469acacc3f" />
+<img width="385" height="842" alt="image" src="https://github.com/user-attachments/assets/7a491249-159d-47f6-82be-bec944511dfd" />
+<img width="381" height="841" alt="image" src="https://github.com/user-attachments/assets/da947955-94fa-49f8-8232-837af9485211" />
+<img width="386" height="847" alt="image" src="https://github.com/user-attachments/assets/268f1c24-c9c0-4366-9a88-e09b1e0370bd" />
+<img width="380" height="839" alt="image" src="https://github.com/user-attachments/assets/96a13ae5-8280-405b-a56d-0d9e19b030c7" />
+<img width="383" height="849" alt="image" src="https://github.com/user-attachments/assets/dd4d08c8-10ea-4e45-b9c4-2a262f233d00" />
+
+
 An Android rider app for Mumbai, built in the spirit of [Namma Yatri](https://github.com/nammayatri) —
 the open-source, zero-commission auto/cab booking platform from Bengaluru. "Amchi" is Marathi for
 "our," mirroring "Namma" (Kannada for "our"): same idea, Mumbai edition.
