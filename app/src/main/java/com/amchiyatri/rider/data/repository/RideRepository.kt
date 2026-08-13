@@ -45,6 +45,13 @@ interface RideRepository {
     val activeRide: StateFlow<Ride?>
     val rideHistory: StateFlow<List<Ride>>
 
+    /**
+     * Set when [activeRide] can't populate - most commonly Firestore permission-denied because
+     * firestore.rules hasn't been deployed yet (see SETUP.md). Screens should show this instead
+     * of silently rendering nothing while [activeRide] is null.
+     */
+    val activeRideError: StateFlow<String?>
+
     fun requestRide(
         pickup: PlaceSuggestion,
         drop: PlaceSuggestion,
@@ -65,12 +72,16 @@ interface RideRepository {
 class FirestoreRideRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val firebaseAuth: FirebaseAuth,
+    private val profileRepository: ProfileRepository,
 ) : RideRepository {
 
     private val repoScope = CoroutineScope(SupervisorJob())
 
     private val _activeRide = MutableStateFlow<Ride?>(null)
     override val activeRide: StateFlow<Ride?> = _activeRide.asStateFlow()
+
+    private val _activeRideError = MutableStateFlow<String?>(null)
+    override val activeRideError: StateFlow<String?> = _activeRideError.asStateFlow()
 
     private val _rideHistory = MutableStateFlow<List<Ride>>(emptyList())
     override val rideHistory: StateFlow<List<Ride>> = _rideHistory.asStateFlow()
@@ -99,12 +110,26 @@ class FirestoreRideRepository @Inject constructor(
         routePolyline: List<GeoPoint>,
     ) {
         val uid = firebaseAuth.currentUser?.uid ?: return
-        val data = ridePlaceholderMap(uid, fare.vehicleType, pickup, drop, fare, paymentMethod, routePolyline)
+        val profile = profileRepository.profile.value
+        val data = ridePlaceholderMap(
+            riderId = uid,
+            riderName = profile?.name.orEmpty(),
+            riderPhone = profile?.phoneNumber.orEmpty(),
+            vehicleType = fare.vehicleType,
+            pickup = pickup,
+            drop = drop,
+            fare = fare,
+            paymentMethod = paymentMethod,
+            routePolyline = routePolyline,
+        )
 
+        _activeRideError.value = null
         val docRef = firestore.collection("rides").document()
         activeRideId = docRef.id
         listenToActiveRide(docRef.id)
-        docRef.set(data)
+        docRef.set(data).addOnFailureListener { error ->
+            _activeRideError.value = "Couldn't create your ride: ${error.message}"
+        }
         // The onRideCreated Cloud Function (functions/dispatch.js) picks this document up from
         // here and drives status/driver/driverLocation forward - nothing else to do client-side.
     }
@@ -112,7 +137,11 @@ class FirestoreRideRepository @Inject constructor(
     private fun listenToActiveRide(rideId: String) {
         activeRideListener?.remove()
         activeRideListener = firestore.collection("rides").document(rideId)
-            .addSnapshotListener { snapshot, _ ->
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    _activeRideError.value = "Couldn't load your ride: ${error.message}"
+                    return@addSnapshotListener
+                }
                 _activeRide.value = snapshot?.let { Ride.fromFirestore(it) }
             }
     }
@@ -151,6 +180,7 @@ class FirestoreRideRepository @Inject constructor(
         activeRideListener = null
         activeRideId = null
         _activeRide.value = null
+        _activeRideError.value = null
     }
 }
 
@@ -162,6 +192,9 @@ class FakeRideRepository @Inject constructor() : RideRepository {
 
     private val _activeRide = MutableStateFlow<Ride?>(null)
     override val activeRide: StateFlow<Ride?> = _activeRide.asStateFlow()
+
+    // The fake drives the whole state machine locally with no I/O, so there's nothing to fail.
+    override val activeRideError: StateFlow<String?> = MutableStateFlow(null).asStateFlow()
 
     private val _rideHistory = MutableStateFlow<List<Ride>>(emptyList())
     override val rideHistory: StateFlow<List<Ride>> = _rideHistory.asStateFlow()

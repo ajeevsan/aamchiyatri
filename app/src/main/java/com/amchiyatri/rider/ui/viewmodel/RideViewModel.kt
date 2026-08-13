@@ -21,6 +21,7 @@ class RideViewModel @Inject constructor(
 ) : ViewModel() {
 
     val activeRide: StateFlow<Ride?> = rideRepository.activeRide
+    val activeRideError: StateFlow<String?> = rideRepository.activeRideError
     val rideHistory: StateFlow<List<Ride>> = rideRepository.rideHistory
     val emergencyContacts get() = profileRepository.profile.value?.emergencyContacts.orEmpty()
 

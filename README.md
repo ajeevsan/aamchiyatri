@@ -26,8 +26,13 @@ local development — see [Rolling back to fakes](SETUP.md#rolling-back-to-fakes
   Home/Work quick-fill, recent destinations
 - **Fare estimation**: Auto / Bike / Sedan / SUV options priced off real road distance/duration
   from the Directions API, with a drawn route polyline, occasional surge pricing
-- **Ride lifecycle**: request → a Cloud Function (`onRideCreated`) matches a driver, animates
-  their approach and the trip on a live Google Map, all streamed back via a Firestore listener
+- **Ride lifecycle**: request → any online driver-mode user can claim it in real time, or (if
+  none do within ~15-20s) a Cloud Function (`onRideCreated`) assigns a simulated one - either way
+  the approach and trip animate on a live Google Map, streamed via a Firestore listener
+- **Driver mode**: the same app and account can switch into driving (Profile → "Switch to
+  driving"): vehicle onboarding, an online/offline toggle, a live list of nearby unclaimed rides,
+  claim-and-drive with arrive/OTP-start/complete actions, and live location broadcast to the
+  rider - no second app or Play Developer account needed. See **Driver mode** below.
 - **Safety**: an SOS button during any active ride (real one-tap dial to police/emergency
   contacts via `ACTION_DIAL`), emergency contacts management in Profile
 - **Payments**: Cash, or a real UPI payment (QR code + UPI-app intent) straight to one configured
@@ -75,13 +80,33 @@ unused by default, in case you ever want to strip the Maps dependency again.
 ## Server-side pieces (`functions/`, `firestore.rules`, `firestore.indexes.json`)
 
 The biggest architectural change from a "fakes-only" build: ride dispatch is no longer simulated
-inside the Android app. Requesting a ride just creates a `rides/{rideId}` Firestore document; a
-Cloud Function (`functions/dispatch.js`) picks it up, assigns a (still simulated, for now) driver,
-and animates their location over time by writing updates to that same document — which every
-device watching it (via a Firestore snapshot listener) sees live. See [SETUP.md](SETUP.md) to
-deploy it.
+inside the Android app. Requesting a ride just creates a `rides/{rideId}` Firestore document that
+any online driver-mode user can claim directly (a plain, rules-guarded Firestore update - see
+Driver mode below); `functions/dispatch.js` only steps in ~15-20s later, and only if nobody has
+claimed it yet, assigning a simulated driver so the app is still fully demoable solo. See
+[SETUP.md](SETUP.md) to deploy it.
 
-Payments deliberately have **no server-side piece** - see the next section.
+Payments deliberately have **no server-side piece** - see the Payments section below.
+
+## Driver mode: same app, same account, no second app
+
+Profile → **"Switch to driving"** turns any account into a driver: a short vehicle-onboarding form
+(`DriverOnboardingScreen`), then a **Driver Home** with an online/offline toggle and a live list of
+unclaimed nearby rides (`DriverHomeScreen`), and an active-trip screen
+(`DriverActiveTripScreen`) with arrive → OTP-verified start → complete actions, continuously
+pushing the driver's live GPS to the ride document.
+
+This works with **zero changes to the rider side** - `RideTrackingScreen` was already just reading
+whatever's in the `rides/{rideId}` document; it doesn't care whether a Cloud Function or a real
+driver wrote it. The only new pieces are [`DriverRepository`](app/src/main/java/com/amchiyatri/rider/data/repository/DriverRepository.kt)
+(claim/arrive/start/complete, all plain Firestore reads/writes) and the security rules that let a
+driver claim a ride exactly once (`firestore.rules`: the claiming update is only accepted while
+`driverId` is still null, so two drivers racing for the same ride can't both win).
+
+**To test solo** (no second phone/account needed): request a ride as a rider, then before the
+~15-20s simulator fallback fires, switch to driving from Profile, go online, and accept your own
+pending ride from Driver Home. Everything after that - arrive, OTP, complete - plays out exactly
+like a real second driver would.
 
 ## Payments: direct UPI, no gateway
 
@@ -113,15 +138,15 @@ app/src/main/java/com/amchiyatri/rider/
 │   ├── components/      AmchiYatriMap (real), MockMap (unused fallback), buttons, bottom nav
 │   ├── navigation/      Destinations + NavHost graph
 │   ├── screens/         onboarding/, auth/, home/, location/, booking/, ride/, history/,
-│   │                    profile/, support/, splash/
+│   │                    profile/, support/, splash/, driver/
 │   ├── theme/           Color, typography, MaterialTheme
-│   └── viewmodel/       Auth, Booking, Ride, Profile, Settings, Payment
+│   └── viewmodel/       Auth, Booking, Ride, Profile, Settings, Payment, Driver
 ├── util/                ApiKeys, Dialer, PolylineDecoder, UpiQrCode
 ├── MainActivity.kt
 └── AmchiYatriApp.kt      @HiltAndroidApp; initializes the Places SDK
-functions/                Cloud Functions: dispatch.js (the ride-dispatch simulator)
-firestore.rules           Per-rider access control for users/ and rides/
-firestore.indexes.json    Composite index for the ride-history query
+functions/                Cloud Functions: dispatch.js (the ride-dispatch simulator/fallback)
+firestore.rules           Per-account access control for users/ and rides/ (incl. driver claims)
+firestore.indexes.json    Composite indexes for ride-history and pending-rides queries
 ```
 
 ## Running it
@@ -146,11 +171,15 @@ via `org.gradle.java.home` in `gradle.properties` or `JAVA_HOME` if you hit
 
 ## Known limitations
 
-- There's still no driver-partner app — `onRideCreated` *simulates* a driver server-side rather
-  than matching a real one. Swapping in real drivers means building that companion app and
-  replacing `functions/dispatch.js`'s random assignment with an actual matching query.
+- No ride-matching by distance yet - `DriverHomeScreen` lists *every* unclaimed ride, not just
+  nearby ones (fine for a single-city demo; a real launch would geo-filter, likely via geohashing
+  since Firestore has no native geoqueries).
+- No driver-side ride history yet - `RideHistoryScreen` only ever queries `riderId == uid`; a
+  driver's completed trips aren't shown anywhere yet (the data's on the ride docs already via
+  `driverId`, it just needs its own query + screen).
 - No push notifications; ride status only updates while the app is open (Firestore listeners are
-  live, but there's no FCM wake-up if the app is killed).
+  live, but there's no FCM wake-up if the app is killed) - this affects drivers waiting for new
+  requests just as much as riders waiting for updates.
 - Directions-based fare/route calls happen directly from the device; for stricter key security
   you could proxy them through a Cloud Function, at the cost of one more network hop.
 - Payments pay a single fixed UPI ID with no aggregator - see the Payments section above for what

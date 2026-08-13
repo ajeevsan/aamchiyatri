@@ -6,6 +6,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavType
@@ -13,10 +15,14 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.amchiyatri.rider.data.model.UserRole
 import com.amchiyatri.rider.ui.screens.auth.OtpVerificationScreen
 import com.amchiyatri.rider.ui.screens.auth.PhoneEntryScreen
 import com.amchiyatri.rider.ui.screens.booking.PaymentMethodScreen
 import com.amchiyatri.rider.ui.screens.booking.RideOptionsScreen
+import com.amchiyatri.rider.ui.screens.driver.DriverActiveTripScreen
+import com.amchiyatri.rider.ui.screens.driver.DriverHomeScreen
+import com.amchiyatri.rider.ui.screens.driver.DriverOnboardingScreen
 import com.amchiyatri.rider.ui.screens.history.RideDetailScreen
 import com.amchiyatri.rider.ui.screens.history.RideHistoryScreen
 import com.amchiyatri.rider.ui.screens.home.HomeScreen
@@ -33,6 +39,7 @@ import com.amchiyatri.rider.ui.screens.ride.RideTrackingScreen
 import com.amchiyatri.rider.ui.screens.splash.SplashScreen
 import com.amchiyatri.rider.ui.screens.support.HelpSupportScreen
 import com.amchiyatri.rider.ui.viewmodel.BookingViewModel
+import com.amchiyatri.rider.ui.viewmodel.DriverViewModel
 import com.amchiyatri.rider.ui.viewmodel.ProfileViewModel
 import com.amchiyatri.rider.ui.viewmodel.RideViewModel
 import com.amchiyatri.rider.ui.viewmodel.SettingsViewModel
@@ -48,6 +55,7 @@ fun AmchiYatriNavGraph() {
     val rideViewModel: RideViewModel = hiltViewModel(activity)
     val profileViewModel: ProfileViewModel = hiltViewModel(activity)
     val settingsViewModel: SettingsViewModel = hiltViewModel(activity)
+    val driverViewModel: DriverViewModel = hiltViewModel(activity)
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -96,11 +104,37 @@ fun AmchiYatriNavGraph() {
         }
 
         composable(Destinations.HOME) {
-            HomeScreen(
-                onNavigate = ::goTo,
-                onOpenLocationSearch = { field -> navController.navigate(Destinations.locationSearch(field)) },
-                onGoToRideOptions = { navController.navigate(Destinations.RIDE_OPTIONS) },
-                bookingViewModel = bookingViewModel,
+            // Same bottom-nav position for both roles; which screen renders here depends only on
+            // the signed-in account's current mode, so switching roles never needs its own routes.
+            val profile by profileViewModel.profile.collectAsState()
+            if (profile?.activeRole == UserRole.DRIVER) {
+                DriverHomeScreen(
+                    onNavigate = ::goTo,
+                    onRideAccepted = { navController.navigate(Destinations.DRIVER_ACTIVE_TRIP) },
+                    driverViewModel = driverViewModel,
+                )
+            } else {
+                HomeScreen(
+                    onNavigate = ::goTo,
+                    onOpenLocationSearch = { field -> navController.navigate(Destinations.locationSearch(field)) },
+                    onGoToRideOptions = { navController.navigate(Destinations.RIDE_OPTIONS) },
+                    bookingViewModel = bookingViewModel,
+                )
+            }
+        }
+
+        composable(Destinations.DRIVER_ONBOARDING) {
+            DriverOnboardingScreen(
+                onBack = { navController.popBackStack() },
+                onDone = { navController.navigate(Destinations.HOME) { popUpTo(Destinations.HOME) { inclusive = true } } },
+                driverViewModel = driverViewModel,
+            )
+        }
+
+        composable(Destinations.DRIVER_ACTIVE_TRIP) {
+            DriverActiveTripScreen(
+                onDone = { navController.navigate(Destinations.HOME) { popUpTo(Destinations.HOME) { inclusive = true } } },
+                driverViewModel = driverViewModel,
             )
         }
 
@@ -150,6 +184,10 @@ fun AmchiYatriNavGraph() {
                 onCompleted = {
                     navController.navigate(Destinations.FARE_SUMMARY) { popUpTo(Destinations.RIDE_TRACKING) { inclusive = true } }
                 },
+                onGiveUp = {
+                    rideViewModel.clearActiveRide()
+                    navController.navigate(Destinations.HOME) { popUpTo(Destinations.HOME) { inclusive = true } }
+                },
                 rideViewModel = rideViewModel,
             )
         }
@@ -195,10 +233,12 @@ fun AmchiYatriNavGraph() {
                 onOpenSavedPlaces = { navController.navigate(Destinations.SAVED_PLACES) },
                 onOpenLanguageSettings = { navController.navigate(Destinations.LANGUAGE_SETTINGS) },
                 onOpenHelp = { navController.navigate(Destinations.HELP_SUPPORT) },
+                onOpenDriverOnboarding = { navController.navigate(Destinations.DRIVER_ONBOARDING) },
                 onLoggedOut = {
                     navController.navigate(Destinations.PHONE_ENTRY) { popUpTo(0) { inclusive = true } }
                 },
                 profileViewModel = profileViewModel,
+                driverViewModel = driverViewModel,
             )
         }
 

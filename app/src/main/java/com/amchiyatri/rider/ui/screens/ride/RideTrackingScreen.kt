@@ -57,9 +57,11 @@ fun RideTrackingScreen(
     onNoDriverFound: () -> Unit,
     onCancelled: () -> Unit,
     onCompleted: () -> Unit,
+    onGiveUp: () -> Unit,
     rideViewModel: RideViewModel,
 ) {
     val ride by rideViewModel.activeRide.collectAsState()
+    val rideError by rideViewModel.activeRideError.collectAsState()
     var showCancelDialog by remember { mutableStateOf(false) }
     var showSosDialog by remember { mutableStateOf(false) }
 
@@ -72,7 +74,11 @@ fun RideTrackingScreen(
         }
     }
 
-    val currentRide = ride ?: return
+    val currentRide = ride
+    if (currentRide == null) {
+        WaitingForRideContent(errorMessage = rideError, onGiveUp = onGiveUp)
+        return
+    }
 
     Scaffold { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
@@ -132,6 +138,38 @@ fun RideTrackingScreen(
             emergencyContacts = rideViewModel.emergencyContacts,
             onDismiss = { showSosDialog = false },
         )
+    }
+}
+
+/**
+ * Shown while [RideViewModel.activeRide] is still null: either briefly, waiting for the first
+ * Firestore snapshot after [RideViewModel.confirmBooking]-equivalent write, or indefinitely if
+ * that write/listen failed (most commonly firestore.rules not deployed yet - see SETUP.md). Never
+ * render nothing here - a silent blank screen is much harder to diagnose than either of these.
+ */
+@Composable
+private fun WaitingForRideContent(errorMessage: String?, onGiveUp: () -> Unit) {
+    Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            if (errorMessage == null) {
+                CircularProgressIndicator()
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Setting up your ride…", style = MaterialTheme.typography.titleMedium)
+            } else {
+                Text(
+                    "Couldn't reach your ride",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    errorMessage,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.padding(top = 8.dp, bottom = 20.dp),
+                )
+                SecondaryButton(text = "Back to Home", onClick = onGiveUp)
+            }
+        }
     }
 }
 

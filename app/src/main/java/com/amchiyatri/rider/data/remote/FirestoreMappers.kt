@@ -1,6 +1,7 @@
 package com.amchiyatri.rider.data.remote
 
 import com.amchiyatri.rider.data.model.Driver
+import com.amchiyatri.rider.data.model.DriverDetails
 import com.amchiyatri.rider.data.model.EmergencyContact
 import com.amchiyatri.rider.data.model.FareEstimate
 import com.amchiyatri.rider.data.model.Gender
@@ -12,6 +13,7 @@ import com.amchiyatri.rider.data.model.RideStatus
 import com.amchiyatri.rider.data.model.SavedPlace
 import com.amchiyatri.rider.data.model.SavedPlaceLabel
 import com.amchiyatri.rider.data.model.UserProfile
+import com.amchiyatri.rider.data.model.UserRole
 import com.amchiyatri.rider.data.model.VehicleType
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.Timestamp
@@ -46,6 +48,8 @@ fun UserProfile.toFirestoreMap(): Map<String, Any?> = mapOf(
     "gender" to gender?.name,
     "emergencyContacts" to emergencyContacts.map { it.toFirestoreMap() },
     "savedPlaces" to savedPlaces.map { it.toFirestoreMap() },
+    "activeRole" to activeRole.name,
+    "driverDetails" to driverDetails?.toFirestoreMap(),
 )
 
 fun UserProfile.Companion.fromFirestore(doc: DocumentSnapshot): UserProfile? {
@@ -62,6 +66,29 @@ fun UserProfile.Companion.fromFirestore(doc: DocumentSnapshot): UserProfile? {
         savedPlaces = (doc.get("savedPlaces") as? List<*>)
             ?.mapNotNull { (it as? Map<*, *>)?.toSavedPlace() }
             ?: emptyList(),
+        activeRole = doc.getString("activeRole")?.let { runCatching { UserRole.valueOf(it) }.getOrNull() } ?: UserRole.RIDER,
+        driverDetails = (doc.get("driverDetails") as? Map<*, *>)?.toDriverDetails(),
+    )
+}
+
+fun DriverDetails.toFirestoreMap(): Map<String, Any?> = mapOf(
+    "vehicleType" to vehicleType.name,
+    "vehicleNumber" to vehicleNumber,
+    "vehicleModel" to vehicleModel,
+    "rating" to rating,
+    "totalTrips" to totalTrips,
+    "isOnline" to isOnline,
+)
+
+private fun Map<*, *>.toDriverDetails(): DriverDetails? {
+    val vehicleType = (this["vehicleType"] as? String)?.let { runCatching { VehicleType.valueOf(it) }.getOrNull() } ?: return null
+    return DriverDetails(
+        vehicleType = vehicleType,
+        vehicleNumber = this["vehicleNumber"] as? String ?: "",
+        vehicleModel = this["vehicleModel"] as? String ?: "",
+        rating = (this["rating"] as? Number)?.toDouble() ?: 5.0,
+        totalTrips = (this["totalTrips"] as? Number)?.toInt() ?: 0,
+        isOnline = this["isOnline"] as? Boolean ?: false,
     )
 }
 
@@ -160,9 +187,11 @@ private fun Map<*, *>.toDriver(): Driver? {
     )
 }
 
-/** Fields set when the rider first requests a ride; the dispatch simulator fills in the rest. */
+/** Fields set when the rider first requests a ride; the dispatch simulator/driver fills in the rest. */
 fun ridePlaceholderMap(
     riderId: String,
+    riderName: String,
+    riderPhone: String,
     vehicleType: VehicleType,
     pickup: PlaceSuggestion,
     drop: PlaceSuggestion,
@@ -171,6 +200,8 @@ fun ridePlaceholderMap(
     routePolyline: List<GeoPoint>,
 ): Map<String, Any?> = mapOf(
     "riderId" to riderId,
+    "riderName" to riderName,
+    "riderPhone" to riderPhone,
     "status" to RideStatus.SEARCHING_DRIVER.name,
     "vehicleType" to vehicleType.name,
     "pickup" to pickup.toFirestoreMap(),
@@ -199,6 +230,7 @@ fun Ride.Companion.fromFirestore(doc: DocumentSnapshot): Ride? {
         fare = fare,
         paymentMethod = paymentMethod,
         routePolyline = (doc.get("routePolyline") as? List<*>)?.mapNotNull { (it as? Map<*, *>)?.toGeoPoint() } ?: emptyList(),
+        driverId = doc.getString("driverId"),
         driver = (doc.get("driver") as? Map<*, *>)?.toDriver(),
         startOtp = doc.getString("startOtp"),
         driverLocation = (doc.get("driverLocation") as? Map<*, *>)?.toGeoPoint(),
@@ -206,5 +238,7 @@ fun Ride.Companion.fromFirestore(doc: DocumentSnapshot): Ride? {
         completedAtMillis = doc.getTimestamp("completedAt")?.toDate()?.time,
         finalFare = doc.getDouble("finalFare"),
         riderRating = doc.getLong("riderRating")?.toInt(),
+        riderName = doc.getString("riderName") ?: "",
+        riderPhone = doc.getString("riderPhone") ?: "",
     )
 }

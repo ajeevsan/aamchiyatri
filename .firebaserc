@@ -1,6 +1,7 @@
 {
   "projects": {
-    "yatri": "amchi-yatri"
+    "yatri": "amchi-yatri",
+    "amchi": "amchi-yatri"
   },
   "targets": {},
   "etags": {}

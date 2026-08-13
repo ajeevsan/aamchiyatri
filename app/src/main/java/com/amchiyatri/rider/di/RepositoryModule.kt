@@ -2,8 +2,10 @@ package com.amchiyatri.rider.di
 
 import com.amchiyatri.rider.data.repository.AuthRepository
 import com.amchiyatri.rider.data.repository.DirectionsFareRepository
+import com.amchiyatri.rider.data.repository.DriverRepository
 import com.amchiyatri.rider.data.repository.FareRepository
 import com.amchiyatri.rider.data.repository.FirebaseAuthRepository
+import com.amchiyatri.rider.data.repository.FirestoreDriverRepository
 import com.amchiyatri.rider.data.repository.FirestoreProfileRepository
 import com.amchiyatri.rider.data.repository.FirestoreRideRepository
 import com.amchiyatri.rider.data.repository.GoogleLocationRepository
@@ -56,4 +58,8 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindPaymentRepository(impl: UpiPaymentRepository): PaymentRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindDriverRepository(impl: FirestoreDriverRepository): DriverRepository
 }

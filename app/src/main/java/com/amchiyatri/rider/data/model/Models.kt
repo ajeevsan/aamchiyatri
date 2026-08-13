@@ -92,6 +92,8 @@ data class Ride(
     val fare: FareEstimate,
     val paymentMethod: PaymentMethod,
     val routePolyline: List<GeoPoint> = emptyList(),
+    /** Set the instant a real driver-mode user claims this ride (see [DriverRepository.acceptRide]). */
+    val driverId: String? = null,
     val driver: Driver? = null,
     val startOtp: String? = null,
     val driverLocation: GeoPoint? = null,
@@ -99,6 +101,9 @@ data class Ride(
     val completedAtMillis: Long? = null,
     val finalFare: Double? = null,
     val riderRating: Int? = null,
+    /** Snapshotted onto the ride at request time so a driver never needs cross-user profile reads. */
+    val riderName: String = "",
+    val riderPhone: String = "",
 ) {
     // Anchor for the Firestore (de)serialization extensions in data/remote/FirestoreMappers.kt.
     companion object
@@ -112,6 +117,18 @@ data class EmergencyContact(
 
 enum class Gender { MALE, FEMALE, OTHER, PREFER_NOT_TO_SAY }
 
+enum class UserRole { RIDER, DRIVER }
+
+/** Present once a rider has completed driver onboarding at least once (see DriverOnboardingScreen). */
+data class DriverDetails(
+    val vehicleType: VehicleType = VehicleType.AUTO,
+    val vehicleNumber: String = "",
+    val vehicleModel: String = "",
+    val rating: Double = 5.0,
+    val totalTrips: Int = 0,
+    val isOnline: Boolean = false,
+)
+
 data class UserProfile(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
@@ -120,6 +137,9 @@ data class UserProfile(
     val gender: Gender? = null,
     val emergencyContacts: List<EmergencyContact> = emptyList(),
     val savedPlaces: List<SavedPlace> = emptyList(),
+    /** Which mode the app is currently showing for this account - see the Profile screen's role switch. */
+    val activeRole: UserRole = UserRole.RIDER,
+    val driverDetails: DriverDetails? = null,
 ) {
     // Anchor for the Firestore (de)serialization extensions in data/remote/FirestoreMappers.kt.
     companion object

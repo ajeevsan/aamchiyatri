@@ -11,6 +11,10 @@ or a Firebase project on your behalf. Payments are the one exception: they need 
 all** beyond a UPI ID you already have (GPay/PhonePe/BHIM/etc.) - no Razorpay, no Play Developer
 account. See step 5.
 
+> **Already set this up before and just pulled driver-mode changes?** Re-run
+> `firebase deploy --only firestore:rules,firestore:indexes,functions` (step 2.4/4 below) - the
+> rules, the composite index for pending rides, and the dispatch simulator's delay all changed.
+
 ## 1. Android app signing info you'll need to register
 
 Your debug keystore's fingerprints (needed for Firebase phone auth / Play Integrity):

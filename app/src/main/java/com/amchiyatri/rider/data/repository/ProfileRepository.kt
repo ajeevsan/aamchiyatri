@@ -1,11 +1,13 @@
 package com.amchiyatri.rider.data.repository
 
+import com.amchiyatri.rider.data.model.DriverDetails
 import com.amchiyatri.rider.data.model.EmergencyContact
 import com.amchiyatri.rider.data.model.Gender
 import com.amchiyatri.rider.data.model.GeoPoint
 import com.amchiyatri.rider.data.model.SavedPlace
 import com.amchiyatri.rider.data.model.SavedPlaceLabel
 import com.amchiyatri.rider.data.model.UserProfile
+import com.amchiyatri.rider.data.model.UserRole
 import com.amchiyatri.rider.data.remote.fromFirestore
 import com.amchiyatri.rider.data.remote.toFirestoreMap
 import com.google.firebase.firestore.FirebaseFirestore
@@ -44,6 +46,14 @@ interface ProfileRepository {
 
     suspend fun addSavedPlace(label: SavedPlaceLabel, customName: String?, address: String, point: GeoPoint)
     suspend fun removeSavedPlace(placeId: String)
+
+    /** Switches which mode the app shows - see the Profile screen's role switch. */
+    suspend fun setActiveRole(role: UserRole)
+
+    /** Saves (or updates) this account's driver onboarding details. */
+    suspend fun updateDriverDetails(details: DriverDetails)
+
+    suspend fun setDriverOnline(isOnline: Boolean)
 }
 
 @Singleton
@@ -122,6 +132,22 @@ class FirestoreProfileRepository @Inject constructor(
         val updated = current.savedPlaces.filterNot { it.id == placeId }
         userDoc(current.id).update("savedPlaces", updated.map { it.toFirestoreMap() }).await()
     }
+
+    override suspend fun setActiveRole(role: UserRole) {
+        val uid = _profile.value?.id ?: return
+        userDoc(uid).update("activeRole", role.name).await()
+    }
+
+    override suspend fun updateDriverDetails(details: DriverDetails) {
+        val uid = _profile.value?.id ?: return
+        userDoc(uid).update("driverDetails", details.toFirestoreMap()).await()
+    }
+
+    override suspend fun setDriverOnline(isOnline: Boolean) {
+        val current = _profile.value ?: return
+        val details = (current.driverDetails ?: DriverDetails()).copy(isOnline = isOnline)
+        updateDriverDetails(details)
+    }
 }
 
 @Singleton
@@ -181,6 +207,20 @@ class FakeProfileRepository @Inject constructor() : ProfileRepository {
     override suspend fun removeSavedPlace(placeId: String) {
         _profile.update { profile ->
             profile?.copy(savedPlaces = profile.savedPlaces.filterNot { it.id == placeId })
+        }
+    }
+
+    override suspend fun setActiveRole(role: UserRole) {
+        _profile.update { it?.copy(activeRole = role) }
+    }
+
+    override suspend fun updateDriverDetails(details: DriverDetails) {
+        _profile.update { it?.copy(driverDetails = details) }
+    }
+
+    override suspend fun setDriverOnline(isOnline: Boolean) {
+        _profile.update { profile ->
+            profile?.copy(driverDetails = (profile.driverDetails ?: DriverDetails()).copy(isOnline = isOnline))
         }
     }
 }

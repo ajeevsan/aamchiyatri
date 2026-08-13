@@ -30,6 +30,9 @@ object Destinations {
     const val LANGUAGE_SETTINGS = "language_settings"
     const val HELP_SUPPORT = "help_support"
 
+    const val DRIVER_ONBOARDING = "driver_onboarding"
+    const val DRIVER_ACTIVE_TRIP = "driver_active_trip"
+
     /** Top-level destinations that own the bottom navigation bar. */
     val bottomBarRoutes = setOf(HOME, RIDE_HISTORY, PROFILE)
 }

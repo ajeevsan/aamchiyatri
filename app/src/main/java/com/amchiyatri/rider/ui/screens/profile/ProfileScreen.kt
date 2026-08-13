@@ -16,9 +16,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Contacts
+import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -33,8 +35,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.amchiyatri.rider.data.model.UserRole
 import com.amchiyatri.rider.ui.components.AmchiYatriBottomBar
 import com.amchiyatri.rider.ui.navigation.Destinations
+import com.amchiyatri.rider.ui.viewmodel.DriverViewModel
 import com.amchiyatri.rider.ui.viewmodel.ProfileViewModel
 
 @Composable
@@ -45,10 +49,13 @@ fun ProfileScreen(
     onOpenSavedPlaces: () -> Unit,
     onOpenLanguageSettings: () -> Unit,
     onOpenHelp: () -> Unit,
+    onOpenDriverOnboarding: () -> Unit,
     onLoggedOut: () -> Unit,
     profileViewModel: ProfileViewModel,
+    driverViewModel: DriverViewModel,
 ) {
     val profile by profileViewModel.profile.collectAsState()
+    val isDriverMode = profile?.activeRole == UserRole.DRIVER
 
     Scaffold(
         bottomBar = { AmchiYatriBottomBar(currentRoute = Destinations.PROFILE, onNavigate = onNavigate) },
@@ -79,6 +86,23 @@ fun ProfileScreen(
             ProfileRow(icon = Icons.Filled.Contacts, title = "Emergency contacts", subtitle = "For SOS during a ride", onClick = onOpenEmergencyContacts)
             ProfileRow(icon = Icons.Filled.Language, title = "App language", subtitle = "English, Hindi, Marathi", onClick = onOpenLanguageSettings)
             ProfileRow(icon = Icons.AutoMirrored.Filled.HelpOutline, title = "Help & support", subtitle = "FAQs and contact us", onClick = onOpenHelp)
+
+            HorizontalDivider()
+            ProfileRow(
+                icon = if (isDriverMode) Icons.Filled.Person else Icons.Filled.DirectionsCar,
+                title = if (isDriverMode) "Switch to riding" else "Switch to driving",
+                subtitle = if (isDriverMode) "Go back to booking rides" else "Accept ride requests with your own vehicle",
+                onClick = {
+                    if (isDriverMode) {
+                        driverViewModel.switchToRiderMode { onNavigate(Destinations.HOME) }
+                    } else {
+                        driverViewModel.switchToDriverMode(
+                            onNeedsOnboarding = onOpenDriverOnboarding,
+                            onDone = { onNavigate(Destinations.HOME) },
+                        )
+                    }
+                },
+            )
 
             HorizontalDivider()
             ProfileRow(

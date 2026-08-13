@@ -3,20 +3,40 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Each rider's own profile: only they can read or write it. Cloud Functions use the Admin
+    // Each user's own profile: only they can read or write it. Cloud Functions use the Admin
     // SDK, which bypasses these rules entirely, so the dispatch simulator's writes are unaffected.
     match /users/{uid} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
 
-    // Rides: a rider can create their own ride request, read it, and update only the fields the
-    // client is allowed to change directly (cancelling, rating, payment bookkeeping). Everything
-    // the dispatch simulator writes (status transitions, driver assignment, driverLocation) comes
-    // from a Cloud Function via the Admin SDK, so it isn't constrained by these rules.
+    // Rides: a rider can create their own ride request and read/update it (cancelling, rating,
+    // payment bookkeeping). Any signed-in driver-mode user can read a ride while it's still
+    // unclaimed (to browse it in DriverHomeScreen), claim it exactly once (the
+    // `resource.data.driverId == null` check makes this safe against two drivers racing - see
+    // DriverRepository.acceptRide), and read/update the ride once it's theirs. Everything the
+    // dispatch simulator writes as a *fallback* comes from a Cloud Function via the Admin SDK, so
+    // it isn't constrained by these rules either.
     match /rides/{rideId} {
       allow create: if request.auth != null && request.auth.uid == request.resource.data.riderId;
-      allow read: if request.auth != null && request.auth.uid == resource.data.riderId;
+
+      allow read: if request.auth != null && (
+        request.auth.uid == resource.data.riderId ||
+        request.auth.uid == resource.data.get('driverId', null) ||
+        resource.data.status == 'SEARCHING_DRIVER'
+      );
+
+      // The rider updating their own ride.
       allow update: if request.auth != null && request.auth.uid == resource.data.riderId;
+
+      // A driver claiming an unclaimed ride, or updating one already assigned to them.
+      allow update: if request.auth != null && (
+        request.auth.uid == resource.data.get('driverId', null) ||
+        (
+          resource.data.status == 'SEARCHING_DRIVER' &&
+          resource.data.get('driverId', null) == null &&
+          request.resource.data.driverId == request.auth.uid
+        )
+      );
     }
   }
 }

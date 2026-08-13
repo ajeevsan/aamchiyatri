@@ -86,9 +86,12 @@ const onRideCreated = onDocumentCreated(
   async (event) => {
     const ref = event.data.ref;
     const ride = event.data.data();
-    const db = getFirestore();
 
-    await sleep(randomInt(2200, 3800));
+    // Give a real driver-mode user (DriverRepository.acceptRide) first crack at claiming this
+    // ride. If nobody has by the time this fires, fall back to the simulated driver below - this
+    // is what keeps a solo/no-drivers-online session fully demoable while still letting a real
+    // driver win the race the moment one exists.
+    await sleep(randomInt(15000, 20000));
     if ((await currentStatus(ref)) !== "SEARCHING_DRIVER") return;
 
     const driverFound = Math.random() > 0.08;
