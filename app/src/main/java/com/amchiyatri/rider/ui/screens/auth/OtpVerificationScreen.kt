@@ -15,7 +15,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -33,6 +37,7 @@ fun OtpVerificationScreen(
     val state = viewModel.uiState
     val activity = LocalContext.current as Activity
     val isLoggedIn by viewModel.isLoggedIn.collectAsState()
+    var isOtpFocused by remember { mutableStateOf(false) }
 
     // Firebase can auto-retrieve the SMS and sign the rider in without them typing anything;
     // when that happens, move on immediately instead of waiting for a manual submit.
@@ -60,8 +65,8 @@ fun OtpVerificationScreen(
         OutlinedTextField(
             value = state.otp,
             onValueChange = viewModel::onOtpChange,
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("6-digit OTP") },
+            modifier = Modifier.fillMaxWidth().onFocusChanged { isOtpFocused = it.isFocused },
+            placeholder = if (isOtpFocused) null else { { Text("6-digit OTP") } },
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
         )

@@ -38,6 +38,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.unit.dp
 import com.amchiyatri.rider.data.model.PlaceSuggestion
 import com.amchiyatri.rider.data.model.SavedPlaceLabel
@@ -137,6 +138,7 @@ private fun PickPlaceDialog(
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<PlaceSuggestion>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
+    var isQueryFocused by remember { mutableStateOf(false) }
 
     LaunchedEffect(query) {
         isLoading = true
@@ -152,8 +154,8 @@ private fun PickPlaceDialog(
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
-                    placeholder = { Text("Search a landmark or area") },
-                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = if (isQueryFocused) null else { { Text("Search a landmark or area") } },
+                    modifier = Modifier.fillMaxWidth().onFocusChanged { isQueryFocused = it.isFocused },
                 )
                 if (isLoading) {
                     CircularProgressIndicator(modifier = Modifier.padding(top = 12.dp))

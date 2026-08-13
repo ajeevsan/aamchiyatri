@@ -26,6 +26,9 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -80,7 +83,18 @@ fun RideTrackingScreen(
         return
     }
 
-    Scaffold { padding ->
+    // Once a ride document exists, activeRideError can still fire on a failed action against it
+    // (e.g. cancelRide's Firestore .update failing) - a Snackbar surfaces that instead of the
+    // silent "I tapped cancel and nothing happened" failure mode WaitingForRideContent already
+    // covers for the ride == null case above.
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(rideError) {
+        rideError?.let { snackbarHostState.showSnackbar(it) }
+    }
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) { Snackbar(it, containerColor = MaterialTheme.colorScheme.errorContainer) } },
+    ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             Column(modifier = Modifier.fillMaxSize()) {
                 AmchiYatriMap(

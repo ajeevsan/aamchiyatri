@@ -126,10 +126,16 @@ class FirestoreRideRepository @Inject constructor(
         _activeRideError.value = null
         val docRef = firestore.collection("rides").document()
         activeRideId = docRef.id
-        listenToActiveRide(docRef.id)
-        docRef.set(data).addOnFailureListener { error ->
-            _activeRideError.value = "Couldn't create your ride: ${error.message}"
-        }
+        // Wait for the document to actually exist before attaching the listener - listening a
+        // moment too early means the first snapshot targets a doc that isn't there yet, and the
+        // security rule's `resource.data.riderId` check throws on a null `resource`, which
+        // Firestore reports back as a (harmless, self-resolving) PERMISSION_DENIED. Sequencing it
+        // this way avoids that transient error outright instead of just surfacing and clearing it.
+        docRef.set(data)
+            .addOnSuccessListener { listenToActiveRide(docRef.id) }
+            .addOnFailureListener { error ->
+                _activeRideError.value = "Couldn't create your ride: ${error.message}"
+            }
         // The onRideCreated Cloud Function (functions/dispatch.js) picks this document up from
         // here and drives status/driver/driverLocation forward - nothing else to do client-side.
     }
@@ -142,6 +148,9 @@ class FirestoreRideRepository @Inject constructor(
                     _activeRideError.value = "Couldn't load your ride: ${error.message}"
                     return@addSnapshotListener
                 }
+                // Any successful snapshot means we're reading fine - clear out a stale error from
+                // an earlier transient failure instead of leaving it stuck on screen forever.
+                _activeRideError.value = null
                 _activeRide.value = snapshot?.let { Ride.fromFirestore(it) }
             }
     }
@@ -159,8 +168,12 @@ class FirestoreRideRepository @Inject constructor(
 
     override fun cancelRide(reason: String) {
         val rideId = activeRideId ?: return
+        _activeRideError.value = null
         firestore.collection("rides").document(rideId)
             .update(mapOf("status" to RideStatus.CANCELLED.name, "cancelReason" to reason))
+            .addOnFailureListener { error ->
+                _activeRideError.value = "Couldn't cancel your ride: ${error.message}"
+            }
     }
 
     override suspend fun submitRating(stars: Int, tipAmount: Double, feedbackTags: List<String>) {

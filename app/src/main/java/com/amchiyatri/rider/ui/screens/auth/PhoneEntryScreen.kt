@@ -13,8 +13,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -30,6 +35,7 @@ fun PhoneEntryScreen(
 ) {
     val state = viewModel.uiState
     val activity = LocalContext.current as Activity
+    var isPhoneFocused by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -55,8 +61,8 @@ fun PhoneEntryScreen(
             OutlinedTextField(
                 value = state.phoneNumber,
                 onValueChange = viewModel::onPhoneNumberChange,
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("10-digit mobile number") },
+                modifier = Modifier.fillMaxWidth().onFocusChanged { isPhoneFocused = it.isFocused },
+                placeholder = if (isPhoneFocused) null else { { Text("10-digit mobile number") } },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
             )

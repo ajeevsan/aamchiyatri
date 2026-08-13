@@ -19,8 +19,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -108,15 +112,16 @@ private fun DriverActionSection(ride: Ride, driverViewModel: DriverViewModel, on
             PrimaryButton(text = "I've arrived at pickup", onClick = driverViewModel::markArrived)
 
         RideStatus.DRIVER_ARRIVED -> {
+            var isOtpFocused by remember { mutableStateOf(false) }
             Text("Ask the rider for their OTP to start the trip", style = MaterialTheme.typography.bodyMedium)
             Spacer(modifier = Modifier.height(8.dp))
             OutlinedTextField(
                 value = driverViewModel.otpEntry,
                 onValueChange = driverViewModel::onOtpEntryChange,
-                placeholder = { Text("4-digit OTP") },
+                placeholder = if (isOtpFocused) null else { { Text("4-digit OTP") } },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().onFocusChanged { isOtpFocused = it.isFocused },
             )
             Spacer(modifier = Modifier.height(12.dp))
             PrimaryButton(text = "Start trip", enabled = driverViewModel.otpEntry.length == 4) {

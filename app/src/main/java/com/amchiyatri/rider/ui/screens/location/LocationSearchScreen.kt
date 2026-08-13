@@ -30,8 +30,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.unit.dp
 import com.amchiyatri.rider.data.model.PlaceSuggestion
 import com.amchiyatri.rider.data.model.SavedPlaceLabel
@@ -48,6 +52,7 @@ fun LocationSearchScreen(
 ) {
     val state by bookingViewModel.uiState.collectAsState()
     val savedPlaces by bookingViewModel.savedPlaces.collectAsState()
+    var isSearchFocused by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         bookingViewModel.onSearchQueryChange("")
@@ -69,8 +74,8 @@ fun LocationSearchScreen(
             OutlinedTextField(
                 value = state.searchQuery,
                 onValueChange = bookingViewModel::onSearchQueryChange,
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Search a landmark, area or address in Mumbai") },
+                modifier = Modifier.fillMaxWidth().onFocusChanged { isSearchFocused = it.isFocused },
+                placeholder = if (isSearchFocused) null else { { Text("Search a landmark, area or address in Mumbai") } },
                 singleLine = true,
                 trailingIcon = { if (state.isSearching) CircularProgressIndicator(modifier = Modifier.width(20.dp), strokeWidth = 2.dp) },
             )
