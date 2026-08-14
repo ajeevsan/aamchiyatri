@@ -102,6 +102,7 @@ fun RideTrackingScreen(
                     pickup = currentRide.pickup.point,
                     drop = if (currentRide.status == RideStatus.ON_TRIP) currentRide.drop.point else null,
                     driver = currentRide.driverLocation,
+                    vehicleType = currentRide.vehicleType,
                     routePoints = currentRide.routePolyline,
                 )
 

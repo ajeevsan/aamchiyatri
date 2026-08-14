@@ -100,7 +100,13 @@ data class Ride(
     val requestedAtMillis: Long = System.currentTimeMillis(),
     val completedAtMillis: Long? = null,
     val finalFare: Double? = null,
+    /** The tip portion of [finalFare], if any - kept separate so ride history can show it as its
+     * own line instead of silently folding it into the total (see RateDriverScreen/RideDetailScreen). */
+    val tipAmount: Double? = null,
     val riderRating: Int? = null,
+    /** Set by [RideRepository.cancelRide]; shown in place of a fare for a CANCELLED ride, which was
+     * never actually charged - see RideHistoryScreen/RideDetailScreen. */
+    val cancelReason: String? = null,
     /** Snapshotted onto the ride at request time so a driver never needs cross-user profile reads. */
     val riderName: String = "",
     val riderPhone: String = "",

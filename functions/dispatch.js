@@ -62,6 +62,9 @@ async function currentStatus(ref) {
 /**
  * Walks `from` -> `to` over `steps` updates, bailing out early if the rider cancelled
  * (or the ride was otherwise removed) in the meantime.
+ *
+ * Straight-line - used only where we have no real road route to follow (the approach leg to
+ * pickup, whose start point is invented by [offsetPoint] rather than coming from Directions).
  */
 async function animateBetween(ref, from, to, steps, stepDelayMs) {
   for (let step = 1; step <= steps; step++) {
@@ -69,6 +72,32 @@ async function animateBetween(ref, from, to, steps, stepDelayMs) {
     if (status === null || status === "CANCELLED") return false;
     const point = lerp(from, to, step / steps);
     await ref.update({ driverLocation: point });
+    await sleep(stepDelayMs);
+  }
+  return true;
+}
+
+/** Evenly picks at most `maxPoints` points out of `points`, always keeping the first and last. */
+function downsample(points, maxPoints) {
+  if (points.length <= maxPoints) return points;
+  const step = (points.length - 1) / (maxPoints - 1);
+  return Array.from({ length: maxPoints }, (_, i) => points[Math.round(i * step)]);
+}
+
+/**
+ * Walks the driver marker along `points` - the real road-following route decoded from the
+ * Directions API on the client and stored as `ride.routePolyline` at request time - instead of a
+ * straight line between the endpoints. Downsampled to `maxSteps` waypoints so a long route doesn't
+ * turn into hundreds of Firestore writes; `totalDurationMs` is spread evenly across whatever's left.
+ */
+async function animateAlongPath(ref, points, totalDurationMs, maxSteps = 40) {
+  const path = downsample(points, maxSteps);
+  if (path.length < 2) return true;
+  const stepDelayMs = totalDurationMs / (path.length - 1);
+  for (let i = 1; i < path.length; i++) {
+    const status = await currentStatus(ref);
+    if (status === null || status === "CANCELLED") return false;
+    await ref.update({ driverLocation: { lat: path[i].lat, lng: path[i].lng } });
     await sleep(stepDelayMs);
   }
   return true;
@@ -115,6 +144,9 @@ const onRideCreated = onDocumentCreated(
     const pickupPoint = { lat: ride.pickup.lat, lng: ride.pickup.lng };
     const dropPoint = { lat: ride.drop.lat, lng: ride.drop.lng };
     const driverStart = offsetPoint(pickupPoint, randomFloat(1.0, 3.0));
+    // Same road-shaped route already decoded and drawn on the rider's map for the fare estimate
+    // (see AmchiYatriMap/FareRepository) - reuse it instead of re-deriving anything.
+    const routePolyline = Array.isArray(ride.routePolyline) ? ride.routePolyline : [];
 
     await ref.update({
       status: "DRIVER_ASSIGNED",
@@ -132,7 +164,10 @@ const onRideCreated = onDocumentCreated(
     if ((await currentStatus(ref)) !== "DRIVER_ARRIVED") return;
     await ref.update({ status: "ON_TRIP" });
 
-    if (!(await animateBetween(ref, pickupPoint, dropPoint, 10, 550))) return;
+    const tripAnimated = routePolyline.length >= 2
+      ? await animateAlongPath(ref, routePolyline, 5500)
+      : await animateBetween(ref, pickupPoint, dropPoint, 10, 550);
+    if (!tripAnimated) return;
     if ((await currentStatus(ref)) === "CANCELLED") return;
 
     await ref.update({

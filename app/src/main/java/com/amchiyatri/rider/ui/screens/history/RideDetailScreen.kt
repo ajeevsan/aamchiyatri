@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -25,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.amchiyatri.rider.data.model.RideStatus
 import com.amchiyatri.rider.ui.components.AmchiYatriMap
 import com.amchiyatri.rider.ui.viewmodel.RideViewModel
 import java.text.SimpleDateFormat
@@ -93,20 +95,65 @@ fun RideDetailScreen(
                 }
 
                 Spacer(modifier = Modifier.height(20.dp))
-                HorizontalDivider()
-                Row(modifier = Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Total paid", style = MaterialTheme.typography.titleMedium)
+                if (ride.status == RideStatus.CANCELLED) {
+                    // A cancelled ride was never charged - fare.totalFare is only ever the pre-ride
+                    // estimate, so showing a fare breakdown here would read as money that changed
+                    // hands when none did. Show why it was cancelled instead of what it "cost".
+                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+                        Row(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                            Icon(Icons.Filled.Cancel, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                            Column(modifier = Modifier.padding(start = 12.dp)) {
+                                Text("Ride cancelled", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Text(
+                                    ride.cancelReason?.takeIf { it.isNotBlank() } ?: "No reason given",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.padding(top = 2.dp),
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "₹${(ride.finalFare ?: ride.fare.totalFare).toInt()}",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
+                        "${ride.vehicleType.displayName} · ${ride.fare.distanceKm} km",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.outline,
+                    )
+                } else {
+                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                        Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
+                            rideViewModel.fareBreakdown(ride.fare).forEach { line ->
+                                Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text(line.label, style = MaterialTheme.typography.bodyLarge)
+                                    Text("₹${line.amount.toInt()}", style = MaterialTheme.typography.bodyLarge)
+                                }
+                            }
+                            // Tip is submitted separately from the fare estimate (RateDriverScreen,
+                            // after the ride's already priced) - shown here as its own line, same as
+                            // any other adjustment, so "Total paid" is never an unexplained number.
+                            if ((ride.tipAmount ?: 0.0) > 0) {
+                                Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("Tip", style = MaterialTheme.typography.bodyLarge)
+                                    Text("₹${ride.tipAmount!!.toInt()}", style = MaterialTheme.typography.bodyLarge)
+                                }
+                            }
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Total paid", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Text(
+                                    "₹${(ride.finalFare ?: ride.fare.totalFare).toInt()}",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "${ride.vehicleType.displayName} · ${ride.fare.distanceKm} km · Paid via ${ride.paymentMethod.name.lowercase().replaceFirstChar { it.uppercase() }}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.outline,
                     )
                 }
-                Text(
-                    "${ride.vehicleType.displayName} · ${ride.fare.distanceKm} km · Paid via ${ride.paymentMethod.name.lowercase().replaceFirstChar { it.uppercase() }}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.outline,
-                )
             }
         }
     }

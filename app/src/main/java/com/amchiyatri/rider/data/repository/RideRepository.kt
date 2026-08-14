@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import kotlin.math.roundToInt
 import kotlin.random.Random
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -183,6 +184,9 @@ class FirestoreRideRepository @Inject constructor(
             mapOf(
                 "riderRating" to stars,
                 "finalFare" to (current.finalFare ?: current.fare.totalFare) + tipAmount,
+                // Stored separately from finalFare so ride history can show it as its own line
+                // (RideDetailScreen) instead of it disappearing into an unexplained total.
+                "tipAmount" to tipAmount,
                 "feedbackTags" to feedbackTags,
             ),
         ).await()
@@ -239,11 +243,11 @@ class FakeRideRepository @Inject constructor() : RideRepository {
         _activeRide.value = ride
 
         simulationJob = scope.launch {
-            runSimulation(ride.id, pickup, drop)
+            runSimulation(ride.id, pickup, drop, routePolyline)
         }
     }
 
-    private suspend fun runSimulation(rideId: String, pickup: PlaceSuggestion, drop: PlaceSuggestion) {
+    private suspend fun runSimulation(rideId: String, pickup: PlaceSuggestion, drop: PlaceSuggestion, routePolyline: List<GeoPoint>) {
         delay(Random.nextLong(2200, 3800))
         if (_activeRide.value?.id != rideId) return // cancelled meanwhile
 
@@ -286,7 +290,13 @@ class FakeRideRepository @Inject constructor() : RideRepository {
         updateRide(rideId) { it.copy(status = RideStatus.ON_TRIP) }
 
         // Trip itself: pickup -> drop, compressed to a short demo animation regardless of real ETA.
-        animateBetween(rideId, from = pickup.point, to = drop.point, steps = 10, stepDelayMs = 550)
+        // Follows the same real road-shaped route already decoded for the fare estimate/map polyline
+        // (FareRepository) rather than a straight line, when one's available.
+        if (routePolyline.size >= 2) {
+            animateAlongPath(rideId, routePolyline, totalDurationMs = 5500)
+        } else {
+            animateBetween(rideId, from = pickup.point, to = drop.point, steps = 10, stepDelayMs = 550)
+        }
         if (_activeRide.value?.id != rideId) return
 
         val completed = updateRide(rideId) {
@@ -300,6 +310,8 @@ class FakeRideRepository @Inject constructor() : RideRepository {
         completed?.let { addToHistory(it) }
     }
 
+    // Straight-line - used only where there's no real road route to follow (the approach leg to
+    // pickup, whose start point is invented by [offsetPoint] rather than coming from Directions).
     private suspend fun animateBetween(rideId: String, from: GeoPoint, to: GeoPoint, steps: Int, stepDelayMs: Long) {
         for (step in 1..steps) {
             if (_activeRide.value?.id != rideId) return
@@ -313,9 +325,33 @@ class FakeRideRepository @Inject constructor() : RideRepository {
         }
     }
 
+    /**
+     * Walks the driver marker along [points] - a real road-following route decoded from the
+     * Directions API, same as what's drawn on the map - instead of a straight line between the
+     * endpoints. Downsampled to [maxSteps] waypoints so a long route doesn't turn into hundreds of
+     * state updates; [totalDurationMs] is spread evenly across whatever's left after downsampling.
+     */
+    private suspend fun animateAlongPath(rideId: String, points: List<GeoPoint>, totalDurationMs: Long, maxSteps: Int = 40) {
+        val path = downsample(points, maxSteps)
+        if (path.size < 2) return
+        val stepDelayMs = totalDurationMs / (path.size - 1)
+        for (i in 1 until path.size) {
+            if (_activeRide.value?.id != rideId) return
+            updateRide(rideId) { it.copy(driverLocation = path[i]) }
+            delay(stepDelayMs)
+        }
+    }
+
+    /** Evenly picks at most [maxPoints] points out of [points], always keeping the first and last. */
+    private fun downsample(points: List<GeoPoint>, maxPoints: Int): List<GeoPoint> {
+        if (points.size <= maxPoints) return points
+        val step = (points.size - 1).toDouble() / (maxPoints - 1)
+        return List(maxPoints) { i -> points[(i * step).roundToInt()] }
+    }
+
     override fun cancelRide(reason: String) {
         simulationJob?.cancel()
-        val cancelled = updateRide(_activeRide.value?.id) { it.copy(status = RideStatus.CANCELLED) }
+        val cancelled = updateRide(_activeRide.value?.id) { it.copy(status = RideStatus.CANCELLED, cancelReason = reason) }
         cancelled?.let { if (it.driver != null) addToHistory(it) }
     }
 
@@ -325,6 +361,7 @@ class FakeRideRepository @Inject constructor() : RideRepository {
         val rated = current.copy(
             riderRating = stars,
             finalFare = (current.finalFare ?: current.fare.totalFare) + tipAmount,
+            tipAmount = tipAmount,
         )
         _rideHistory.value = _rideHistory.value.map { if (it.id == rated.id) rated else it }
         _activeRide.value = rated

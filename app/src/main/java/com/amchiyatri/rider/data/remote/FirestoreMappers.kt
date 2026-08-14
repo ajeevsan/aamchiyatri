@@ -237,7 +237,9 @@ fun Ride.Companion.fromFirestore(doc: DocumentSnapshot): Ride? {
         requestedAtMillis = doc.getTimestamp("requestedAt")?.toDate()?.time ?: System.currentTimeMillis(),
         completedAtMillis = doc.getTimestamp("completedAt")?.toDate()?.time,
         finalFare = doc.getDouble("finalFare"),
+        tipAmount = doc.getDouble("tipAmount"),
         riderRating = doc.getLong("riderRating")?.toInt(),
+        cancelReason = doc.getString("cancelReason"),
         riderName = doc.getString("riderName") ?: "",
         riderPhone = doc.getString("riderPhone") ?: "",
     )

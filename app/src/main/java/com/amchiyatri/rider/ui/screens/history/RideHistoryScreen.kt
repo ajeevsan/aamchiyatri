@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -32,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import com.amchiyatri.rider.data.model.Ride
 import com.amchiyatri.rider.data.model.RideStatus
 import com.amchiyatri.rider.ui.components.AmchiYatriBottomBar
+import com.amchiyatri.rider.ui.components.vehicleIconFor
 import com.amchiyatri.rider.ui.navigation.Destinations
 import com.amchiyatri.rider.ui.viewmodel.RideViewModel
 import java.text.SimpleDateFormat
@@ -76,19 +76,24 @@ fun RideHistoryScreen(
 @Composable
 private fun RideHistoryRow(ride: Ride, onClick: () -> Unit) {
     val dateFormat = remember { SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()) }
+    val (vehicleIcon, vehicleColor) = vehicleIconFor(ride.vehicleType)
     Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
         Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.DirectionsCar, contentDescription = null, modifier = Modifier.padding(end = 12.dp))
+            Icon(vehicleIcon, contentDescription = ride.vehicleType.displayName, tint = vehicleColor, modifier = Modifier.padding(end = 12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text("${ride.pickup.title} → ${ride.drop.title}", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
                 Text(dateFormat.format(Date(ride.requestedAtMillis)), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline)
                 Text(statusLabel(ride.status), style = MaterialTheme.typography.bodyMedium, color = statusColor(ride.status))
             }
-            Text(
-                "₹${(ride.finalFare ?: ride.fare.totalFare).toInt()}",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-            )
+            // A cancelled ride was never actually charged - fare.totalFare is only ever the
+            // pre-ride estimate, so showing it here would read as money that changed hands.
+            if (ride.status != RideStatus.CANCELLED) {
+                Text(
+                    "₹${(ride.finalFare ?: ride.fare.totalFare).toInt()}",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
         }
     }
 }

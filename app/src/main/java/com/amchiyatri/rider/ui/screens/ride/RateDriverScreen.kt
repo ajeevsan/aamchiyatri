@@ -14,7 +14,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.outlined.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
@@ -50,7 +50,7 @@ fun RateDriverScreen(
     val ride by rideViewModel.activeRide.collectAsState()
     val currentRide = ride ?: return
 
-    var stars by remember { mutableStateOf(5) }
+    var stars by remember { mutableStateOf(0) }
     var tip by remember { mutableStateOf("") }
     val selectedTags = remember { mutableStateOf(setOf<String>()) }
     val tagOptions = if (stars >= 4) positiveTags else negativeTags
@@ -81,7 +81,10 @@ fun RateDriverScreen(
                 (1..5).forEach { star ->
                     IconButton(onClick = { stars = star; selectedTags.value = emptySet() }) {
                         Icon(
-                            imageVector = if (star <= stars) Icons.Filled.Star else Icons.Outlined.Star,
+                            // Icons.Outlined.Star is (as of material-icons-core 1.6.8) the exact
+                            // same solid path as Icons.Filled.Star, not a hollow outline - the real
+                            // hollow star lives under a different icon name, StarBorder.
+                            imageVector = if (star <= stars) Icons.Filled.Star else Icons.Filled.StarBorder,
                             contentDescription = "$star star",
                             tint = MaterialTheme.colorScheme.primary,
                         )
@@ -89,17 +92,19 @@ fun RateDriverScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-            LazyRow {
-                items(tagOptions) { tag ->
-                    FilterChip(
-                        selected = tag in selectedTags.value,
-                        onClick = {
-                            selectedTags.value = if (tag in selectedTags.value) selectedTags.value - tag else selectedTags.value + tag
-                        },
-                        label = { Text(tag) },
-                        modifier = Modifier.padding(end = 8.dp),
-                    )
+            if (stars > 0) {
+                Spacer(modifier = Modifier.height(16.dp))
+                LazyRow {
+                    items(tagOptions) { tag ->
+                        FilterChip(
+                            selected = tag in selectedTags.value,
+                            onClick = {
+                                selectedTags.value = if (tag in selectedTags.value) selectedTags.value - tag else selectedTags.value + tag
+                            },
+                            label = { Text(tag) },
+                            modifier = Modifier.padding(end = 8.dp),
+                        )
+                    }
                 }
             }
 
@@ -110,6 +115,7 @@ fun RateDriverScreen(
                 Row {
                     listOf("0", "10", "20", "50").forEach { amount ->
                         Card(
+                            onClick = { tip = amount },
                             modifier = Modifier.padding(end = 8.dp),
                             colors = CardDefaults.cardColors(
                                 containerColor = if (tip == amount) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,

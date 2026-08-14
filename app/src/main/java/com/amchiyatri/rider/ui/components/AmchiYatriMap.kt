@@ -2,14 +2,23 @@ package com.amchiyatri.rider.ui.components
 
 import android.Manifest
 import android.content.pm.PackageManager
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.amchiyatri.rider.data.model.GeoPoint
+import com.amchiyatri.rider.data.model.VehicleType
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
@@ -19,6 +28,7 @@ import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.MapProperties
 import com.google.maps.android.compose.MapUiSettings
 import com.google.maps.android.compose.Marker
+import com.google.maps.android.compose.MarkerComposable
 import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.Polyline
 import com.google.maps.android.compose.rememberCameraPositionState
@@ -34,6 +44,7 @@ fun AmchiYatriMap(
     pickup: GeoPoint? = null,
     drop: GeoPoint? = null,
     driver: GeoPoint? = null,
+    vehicleType: VehicleType? = null,
     routePoints: List<GeoPoint> = emptyList(),
 ) {
     val context = LocalContext.current
@@ -84,14 +95,40 @@ fun AmchiYatriMap(
             )
         }
         driver?.let {
-            Marker(
+            MarkerComposable(
                 state = MarkerState(LatLng(it.lat, it.lng)),
                 title = "Driver",
-                icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE),
-            )
+            ) {
+                VehicleMarkerIcon(vehicleType)
+            }
         }
         if (routePoints.isNotEmpty()) {
             Polyline(points = routePoints.map { LatLng(it.lat, it.lng) }, color = Color(0xFF00695C))
         }
+    }
+}
+
+/**
+ * The driver's live marker: a vehicle-specific icon (auto-rickshaw/bike/car) in a colored circle,
+ * rather than a generic map pin - rendered as real Compose content via [MarkerComposable] (which
+ * rasterizes it to a [com.google.android.gms.maps.model.BitmapDescriptor] under the hood) so it's
+ * a plain vector icon like anywhere else in the app, not a bitmap asset to ship.
+ */
+@Composable
+private fun VehicleMarkerIcon(vehicleType: VehicleType?) {
+    val (icon, background) = vehicleIconFor(vehicleType)
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .background(background, CircleShape)
+            .border(2.dp, Color.White, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = "Driver vehicle",
+            tint = Color.White,
+            modifier = Modifier.size(24.dp),
+        )
     }
 }

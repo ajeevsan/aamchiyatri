@@ -97,15 +97,21 @@ fun HomeScreen(
                             SavedPlaceChip(
                                 icon = Icons.Filled.Home,
                                 label = "Home",
-                                enabled = home != null,
+                                hasPlace = home != null,
                                 onClick = {
-                                    home?.let {
+                                    val place = home
+                                    if (place == null) {
+                                        // Nothing saved yet - the chip's own label says "add in
+                                        // Profile", so tapping it should actually take you there
+                                        // instead of being a dead, disabled button.
+                                        onNavigate(Destinations.SAVED_PLACES)
+                                    } else {
                                         bookingViewModel.setPlace(
                                             LocationField.DROP,
                                             com.amchiyatri.rider.data.model.PlaceSuggestion(
-                                                title = it.customName ?: "Home",
-                                                subtitle = it.address,
-                                                point = it.point,
+                                                title = place.customName ?: "Home",
+                                                subtitle = place.address,
+                                                point = place.point,
                                                 isSaved = true,
                                             ),
                                         )
@@ -116,15 +122,18 @@ fun HomeScreen(
                             SavedPlaceChip(
                                 icon = Icons.Filled.Work,
                                 label = "Work",
-                                enabled = work != null,
+                                hasPlace = work != null,
                                 onClick = {
-                                    work?.let {
+                                    val place = work
+                                    if (place == null) {
+                                        onNavigate(Destinations.SAVED_PLACES)
+                                    } else {
                                         bookingViewModel.setPlace(
                                             LocationField.DROP,
                                             com.amchiyatri.rider.data.model.PlaceSuggestion(
-                                                title = it.customName ?: "Work",
-                                                subtitle = it.address,
-                                                point = it.point,
+                                                title = place.customName ?: "Work",
+                                                subtitle = place.address,
+                                                point = place.point,
                                                 isSaved = true,
                                             ),
                                         )
@@ -189,12 +198,14 @@ private fun WhereToCard(pickupLabel: String, onPickupClick: () -> Unit, onDropCl
 }
 
 @Composable
-private fun SavedPlaceChip(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, enabled: Boolean, onClick: () -> Unit) {
+private fun SavedPlaceChip(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, hasPlace: Boolean, onClick: () -> Unit) {
+    // Always enabled/clickable - even with nothing saved yet, tapping it should do something
+    // (open Profile to add one) rather than sit there disabled just because the label mentions
+    // where to go add it.
     AssistChip(
         onClick = onClick,
-        enabled = enabled,
         leadingIcon = { Icon(icon, contentDescription = null) },
-        label = { Text(if (enabled) label else "$label · add in Profile") },
+        label = { Text(if (hasPlace) label else "$label · add in Profile") },
     )
 }
 
