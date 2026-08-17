@@ -6,13 +6,16 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.automirrored.filled.Message
@@ -106,8 +109,14 @@ fun RideTrackingScreen(
                     routePoints = currentRide.routePolyline,
                 )
 
-                Surface(tonalElevation = 4.dp) {
-                    Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
+                // Capped to at most half the screen and made independently scrollable so a tall
+                // state (DriverAssignedContent's OTP card + call/message buttons) can't squeeze the
+                // weighted map above it down to nothing, or clip off-screen, on a short/landscape
+                // viewport - it was never an issue in portrait since content never got close to 50%.
+                Surface(tonalElevation = 4.dp, modifier = Modifier.fillMaxHeight(0.5f)) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(20.dp).verticalScroll(rememberScrollState()),
+                    ) {
                         when (currentRide.status) {
                             RideStatus.SEARCHING_DRIVER -> SearchingDriverContent(onCancel = { showCancelDialog = true })
                             RideStatus.DRIVER_ASSIGNED,

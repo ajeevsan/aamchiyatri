@@ -63,7 +63,11 @@ fun HomeScreen(
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             Column(modifier = Modifier.fillMaxSize()) {
-                Box(modifier = Modifier.fillMaxWidth().height(260.dp)) {
+                // A fixed 260.dp map ate almost the entire screen height in landscape (or on any
+                // short/wide aspect ratio), squeezing the booking card below it down to a sliver.
+                // Splitting the space by weight instead means the map shrinks along with the
+                // screen instead of claiming an absolute amount that stops fitting.
+                Box(modifier = Modifier.fillMaxWidth().weight(0.38f)) {
                     AmchiYatriMap(
                         modifier = Modifier.fillMaxSize(),
                         pickup = state.pickup?.point ?: currentLocation,
@@ -78,7 +82,7 @@ fun HomeScreen(
                 }
 
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxWidth().weight(0.62f),
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
